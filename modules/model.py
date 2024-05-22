@@ -85,7 +85,7 @@ class XFeatModel(nn.Module):
 
 
 		self.keypoint_head = nn.Sequential(
-										BasicLayer(64, 64, 1, padding=0),
+										BasicLayer(1, 64, (8,8), (8,8),padding=0),
 										BasicLayer(64, 64, 1, padding=0),
 										BasicLayer(64, 64, 1, padding=0),
 										nn.Conv2d (64, 65, 1),
@@ -149,6 +149,8 @@ class XFeatModel(nn.Module):
 
 		#heads
 		heatmap = self.heatmap_head(feats) # Reliability map
-		keypoints = self.keypoint_head(self._unfold2d(x, ws=8)) #Keypoint map logits
+		# keypoints = self.keypoint_head(self._unfold2d(x, ws=8)) # this part of the model tryes to do pixel_unshuffle manually i can just replace it with pixel_unshuffle
+		# keypoints = self.keypoint_head(F.pixel_unshuffle(x, 8)) # the pixel_unshuffle becomes (reshape -> transpose -> resape) in onnx, hailo cant complie 
+		keypoints = self.keypoint_head(x) #changed the convolution after the pixel_unshuffle to replace the pixel_unshuffle 
 
 		return feats, keypoints, heatmap

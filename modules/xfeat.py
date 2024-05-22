@@ -8,9 +8,11 @@ import numpy as np
 import os
 import torch
 import torch.nn.functional as F
-
+import time
+import onnxruntime as ort
+from modules.hailo import Hailo
 import tqdm
-
+from hailo_platform import (FormatType)
 from modules.model import *
 from modules.interpolator import InterpolateSparse2d
 
@@ -25,15 +27,70 @@ class XFeat(nn.Module):
 		self.dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		self.net = XFeatModel().to(self.dev).eval()
 		self.top_k = top_k
+		
+		self.hailo_model = Hailo(hef_path = 'hailo_files/x_feature_13_without_pixel_unshuffle_sim_without_head.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+		self.session = ort.InferenceSession("hailo_files/x_feature_13_without_pixel_unshuffle_sim_only_head.onnx")
+		# self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle.onnx")
+		self.onnx_input_names = [input.name for input in self.session.get_inputs()]
+		self.onnx_output_names = [output.name for output in self.session.get_outputs()]
 
 		if weights is not None:
 			if isinstance(weights, str):
 				print('loading weights from: ' + weights)
-				self.net.load_state_dict(torch.load(weights, map_location=self.dev))
+				state_dict = torch.load(weights, map_location=self.dev)
+				state_dict['keypoint_head.0.layer.0.weight'] = state_dict['keypoint_head.0.layer.0.weight'].reshape(64,1,8,8)
+				self.net.load_state_dict(state_dict)
 			else:
 				self.net.load_state_dict(weights)
 
 		self.interpolator = InterpolateSparse2d('bicubic')
+	
+	def convert_to_onnx(self, x):
+		torch.onnx.export(self.net,
+		          args=(x),
+		          f='./x_feature_13_without_pixel_unshuffle.onnx',
+		          input_names=['INPUT_1'],
+		          output_names=['OUTPUT_1', 'OUTPUT_2', 'OUTPUT_3'],
+		          verbose=True, 
+		          export_params=True, 
+		          training=torch.onnx.TrainingMode.PRESERVE, 
+		          do_constant_folding=False,
+		          opset_version=13)
+		exit()
+		
+	def infer_onnx(self, x):
+		input_names = [input.name for input in session.get_inputs()]
+		output_names = [output.name for output in session.get_outputs()]
+		net_input = {input_names[0]: x.numpy()}
+		outputs = session.run(output_names, net_input)
+		# return outputs
+		return torch.from_numpy(outputs[0]), torch.from_numpy(outputs[1]), torch.from_numpy(outputs[2]) 
+	
+	def hailo_infer_per(self, x):
+		# start = time.time()
+		onnx_output = self.session.run(self.onnx_output_names, {self.onnx_input_names[0]: x.numpy()})
+		# norm_out = self.hailo_input_convertion.infer_slow(np.transpose(x.numpy().astype(np.uint8),(0, 2, 3, 1)))
+		# ew_mult = np.multiply(norm_out['x_feature_13_without_pixel_unshuffle_sim_only_head/ew_sub1'],norm_out['x_feature_13_without_pixel_unshuffle_sim_only_head/resize2'])
+		# print(onnx_output[0].shape)
+		# print(ew_mult.shape)
+		# print(np.transpose(onnx_output[0],(0, 2, 3, 1))-ew_mult)
+		# print(np.transpose(onnx_output[0],(0, 2, 3, 1)))
+		# print(ew_mult)
+		# exit()
+		# onnx_output = np.transpose(onnx_output[0],(0, 2, 3, 1))
+		# end = time.time()
+		# print("onnx time ",end-start)
+		# start = time.time()
+		infer_results = self.hailo_model.infer(np.transpose(onnx_output[0],(0, 2, 3, 1)))
+		# infer_results = self.hailo_model.infer_slow(ew_mult)
+		# end = time.time()
+		# print("hailo model time ",end-start)
+
+		OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv9']
+		OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv24']
+		OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv27']
+		return torch.Tensor(np.transpose(OUTPUT_2,(0,3,1,2))), torch.Tensor(np.transpose(OUTPUT_1,(0,3,1,2))), torch.Tensor(np.transpose(OUTPUT_3,(0,3,1,2)))
+
 
 	@torch.inference_mode()
 	def detectAndCompute(self, x, top_k = None):
@@ -51,10 +108,37 @@ class XFeat(nn.Module):
 		"""
 		if top_k is None: top_k = self.top_k
 		x, rh1, rw1 = self.preprocess_tensor(x)
-
+		
+		# session = load_model("hailo/x_feature_13_without_pixel_unshuffle_sim_only_head.onnx")
+		# outputs = run_model(session, x.numpy())
+		# onnx_output = np.transpose(outputs[0],(0, 2, 3, 1))
+		# np.save(f'preprocess_include_onnx_head/{time.time()}',onnx_output)
+		
+		# print(x.shape)
+		# np.save(f'preprocess_dataset_0_255/{time.time()}', x)
+		# np.save(f'test_input/{time.time()}', x)
+		# y = np.load('test_input/1716277911.824664.npy')
+		# x = torch.Tensor(y)
 		B, _, _H1, _W1 = x.shape
-        
-		M1, K1, H1 = self.net(x)
+
+		# self.convert_to_onnx(x)
+		# M1, K1, H1 = self.net(x)
+		# M1, K1, H1 = self.infer_onnx(x)
+		# start = time.time()
+		M1, K1, H1 = self.hailo_infer_per(x)
+		# end = time.time()
+		# print("haio+onnx infer time ",end-start)
+		# print(M1.shape,M1_.shape)
+		# print(K1.shape,K1_.shape)
+		# print(H1.shape,H1_.shape)
+		# print(M1-M1_)
+		# print(M1)
+		# print(K1-K1_)
+		# print(K1)
+		# print(H1-H1_)
+		# print(H1)
+		# exit()
+
 		M1 = F.normalize(M1, dim=1)
 
 		#Convert logits to heatmap and extract kpts

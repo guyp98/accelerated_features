@@ -133,15 +133,12 @@ class XFeat(nn.Module):
 		B, _, _H1, _W1 = x.shape
 
 		# self.convert_to_onnx(x)
-		# M1, K1, H1 = self.net(x)
+		M1, K1, H1 = self.net(x)
 		# M1, K1, H1 = self.infer_onnx(x)
 		# start = time.time()
-		start = time.time()
-		M1, K1, H1 = self.hailo_infer_per(x)
-		end = time.time()
-		print("hailo+onnx ",end-start)
+		# M1, K1, H1 = self.hailo_infer_per(x)
 		# end = time.time()
-		# print("haio+onnx infer time ",end-start)
+		# print("hailo+onnx ",end-start)
 		# print(M1.shape,M1_.shape)
 		# print(K1.shape,K1_.shape)
 		# print(H1.shape,H1_.shape)
@@ -293,7 +290,7 @@ class XFeat(nn.Module):
 
 	def get_kpts_heatmap(self, scores):
 		# start = time.time()
-		scores = scores[:, :64]
+		scores = scores
 		# end = time.time()
 		# print("interpulator ",end-start)
 		B, _, H, W = scores.shape

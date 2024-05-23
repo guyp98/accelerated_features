@@ -28,7 +28,8 @@ class XFeat(nn.Module):
 		self.net = XFeatModel().to(self.dev).eval()
 		self.top_k = top_k
 		
-		self.hailo_model = Hailo(hef_path = 'hailo_files/x_feature_13_without_pixel_unshuffle_sim_without_head.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+		# self.hailo_model = Hailo(hef_path = 'hailo_files/x_feature_13_without_pixel_unshuffle_sim_without_head.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+		self.hailo_model = Hailo(hef_path = 'x_feature_13_without_pixel_unshuffle_normilize_sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
 		self.session = ort.InferenceSession("hailo_files/x_feature_13_without_pixel_unshuffle_sim_only_head.onnx")
 		# self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle.onnx")
 		self.onnx_input_names = [input.name for input in self.session.get_inputs()]
@@ -48,7 +49,7 @@ class XFeat(nn.Module):
 	def convert_to_onnx(self, x):
 		torch.onnx.export(self.net,
 		          args=(x),
-		          f='./x_feature_13_without_pixel_unshuffle.onnx',
+		          f='./x_feature_13_without_pixel_unshuffle_normilize.onnx',
 		          input_names=['INPUT_1'],
 		          output_names=['OUTPUT_1', 'OUTPUT_2', 'OUTPUT_3'],
 		          verbose=True, 
@@ -86,9 +87,13 @@ class XFeat(nn.Module):
 		# end = time.time()
 		# print("hailo model time ",end-start)
 
-		OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv9']
-		OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv24']
-		OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv27']
+		# OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv9']
+		# OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv24']
+		# OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv27']
+		OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_sim/conv9']
+		OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_sim/ew_mult1']
+		OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_sim/conv27']
+
 		return torch.Tensor(np.transpose(OUTPUT_2,(0,3,1,2))), torch.Tensor(np.transpose(OUTPUT_1,(0,3,1,2))), torch.Tensor(np.transpose(OUTPUT_3,(0,3,1,2)))
 
 
@@ -139,12 +144,12 @@ class XFeat(nn.Module):
 		# print(H1)
 		# exit()
 
-		M1 = F.normalize(M1, dim=1)
+		# M1 = F.normalize(M1, dim=1) #in comment because its now part of the network
 
 		#Convert logits to heatmap and extract kpts
+		
 		K1h = self.get_kpts_heatmap(K1)
 		mkpts = self.NMS(K1h, threshold=0.05, kernel_size=5)
-
 		#Compute reliability scores
 		_nearest = InterpolateSparse2d('nearest')
 		_bilinear = InterpolateSparse2d('bilinear')
@@ -160,7 +165,6 @@ class XFeat(nn.Module):
 
 		#Interpolate descriptors at kpts positions
 		feats = self.interpolator(M1, mkpts, H = _H1, W = _W1)
-
 		#L2-Normalize
 		feats = F.normalize(feats, dim=-1)
 
@@ -168,6 +172,7 @@ class XFeat(nn.Module):
 		mkpts = mkpts * torch.tensor([rw1,rh1], device=mkpts.device).view(1, 1, -1)
 
 		valid = scores > 0
+
 		return [  
 				   {'keypoints': mkpts[b][valid[b]],
 					'scores': scores[b][valid[b]],
@@ -267,7 +272,10 @@ class XFeat(nn.Module):
 		return x, rh, rw
 
 	def get_kpts_heatmap(self, kpts, softmax_temp = 1.0):
+		# start = time.time()
 		scores = F.softmax(kpts*softmax_temp, 1)[:, :64]
+		# end = time.time()
+		# print("interpulator ",end-start)
 		B, _, H, W = scores.shape
 		heatmap = scores.permute(0, 2, 3, 1).reshape(B, H, W, 8, 8)
 		heatmap = heatmap.permute(0, 1, 3, 2, 4).reshape(B, 1, H*8, W*8)
@@ -276,7 +284,10 @@ class XFeat(nn.Module):
 	def NMS(self, x, threshold = 0.05, kernel_size = 5):
 		B, _, H, W = x.shape
 		pad=kernel_size//2
+		# start = time.time()
 		local_max = nn.MaxPool2d(kernel_size=kernel_size, stride=1, padding=pad)(x)
+		# end = time.time()
+		# print("nms ", end-start)
 		pos = (x == local_max) & (x > threshold)
 		pos_batched = [k.nonzero()[..., 1:].flip(-1) for k in pos]
 

@@ -201,7 +201,10 @@ class MatchingDemo:
             kp1, des1 = self.ref_precomp
             kp2, des2 = self.method.descriptor.detectAndCompute(current_frame, None)
         else:
+            start = time()
             current = self.method.descriptor.detectAndCompute(current_frame)
+            end = time()
+            print(end-start)
             kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
             kpts2, descs2 = current['keypoints'], current['descriptors']
             idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)

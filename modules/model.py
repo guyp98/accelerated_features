@@ -146,6 +146,8 @@ class XFeatModel(nn.Module):
 		x4 = F.interpolate(x4, (x3.shape[-2], x3.shape[-1]), mode='bilinear')
 		x5 = F.interpolate(x5, (x3.shape[-2], x3.shape[-1]), mode='bilinear')
 		feats = self.block_fusion( x3 + x4 + x5 )
+		# feats_norm = torch.norm(feats, dim=1)
+		feats_norm = F.normalize(feats, dim=1)
 
 		#heads
 		heatmap = self.heatmap_head(feats) # Reliability map
@@ -153,4 +155,4 @@ class XFeatModel(nn.Module):
 		# keypoints = self.keypoint_head(F.pixel_unshuffle(x, 8)) # the pixel_unshuffle becomes (reshape -> transpose -> resape) in onnx, hailo cant complie 
 		keypoints = self.keypoint_head(x) #changed the convolution after the pixel_unshuffle to replace the pixel_unshuffle 
 
-		return feats, keypoints, heatmap
+		return feats_norm, keypoints, heatmap

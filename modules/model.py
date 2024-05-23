@@ -148,11 +148,13 @@ class XFeatModel(nn.Module):
 		feats = self.block_fusion( x3 + x4 + x5 )
 		# feats_norm = torch.norm(feats, dim=1)
 		feats_norm = F.normalize(feats, dim=1)
+		
 
 		#heads
 		heatmap = self.heatmap_head(feats) # Reliability map
 		# keypoints = self.keypoint_head(self._unfold2d(x, ws=8)) # this part of the model tryes to do pixel_unshuffle manually i can just replace it with pixel_unshuffle
 		# keypoints = self.keypoint_head(F.pixel_unshuffle(x, 8)) # the pixel_unshuffle becomes (reshape -> transpose -> resape) in onnx, hailo cant complie 
 		keypoints = self.keypoint_head(x) #changed the convolution after the pixel_unshuffle to replace the pixel_unshuffle 
+		keypoints = F.softmax(keypoints*1.0, 1)
 
 		return feats_norm, keypoints, heatmap

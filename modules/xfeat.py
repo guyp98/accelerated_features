@@ -138,10 +138,10 @@ class XFeat(nn.Module):
 		B, _, _H1, _W1 = x.shape
 
 		# self.convert_to_onnx(x)
-		# M1, K1, H1 = self.net(x)
+		M1, K1, H1 = self.net(x)
 		# M1, K1, H1 = self.infer_onnx(x)
 		# start = time.time()
-		M1, K1, H1 = self.hailo_infer_per(x)
+		# M1, K1, H1 = self.hailo_infer_per(x)
 		# end = time.time()
 		# print("hailo+onnx ",end-start)
 		# print(M1.shape,M1_.shape)
@@ -159,12 +159,11 @@ class XFeat(nn.Module):
 
 		#Convert logits to heatmap and extract kpts
 		# start = time.time()
-		K1h = self.get_kpts_heatmap(K1)
-		mkpts = self.NMS(K1h, threshold=0.05, kernel_size=5)
+		mkpts = self.NMS(K1, threshold=0.05, kernel_size=5)
 		#Compute reliability scores
 		_nearest = InterpolateSparse2d('nearest')
 		_bilinear = InterpolateSparse2d('bilinear')
-		scores = (_nearest(K1h, mkpts, _H1, _W1) * _bilinear(H1, mkpts, _H1, _W1)).squeeze(-1)
+		scores = (_nearest(K1, mkpts, _H1, _W1) * _bilinear(H1, mkpts, _H1, _W1)).squeeze(-1)
 		scores[torch.all(mkpts == 0, dim=-1)] = -1
 
 		#Select top-k features
@@ -293,14 +292,6 @@ class XFeat(nn.Module):
 	# 	heatmap = heatmap.permute(0, 1, 3, 2, 4).reshape(B, 1, H*8, W*8)
 	# 	return heatmap
 
-	def get_kpts_heatmap(self, scores):
-		# start = time.time()
-		# end = time.time()
-		# print("interpulator ",end-start)
-		B, _, H, W = scores.shape
-		heatmap = scores.permute(0, 2, 3, 1).reshape(B, H, W, 8, 8)
-		heatmap = heatmap.permute(0, 1, 3, 2, 4).reshape(B, 1, H*8, W*8)
-		return heatmap
 
 	def NMS(self, x, threshold = 0.05, kernel_size = 5):
 		B, _, H, W = x.shape

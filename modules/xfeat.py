@@ -15,6 +15,7 @@ import tqdm
 from hailo_platform import (FormatType)
 from modules.model import *
 from modules.interpolator import InterpolateSparse2d
+# from skimage.util.shape import view_as_windows
 
 class XFeat(nn.Module):
 	""" 
@@ -22,21 +23,36 @@ class XFeat(nn.Module):
 		It supports inference for both sparse and semi-dense feature extraction & matching.
 	"""
 
-	def __init__(self, weights = os.path.abspath(os.path.dirname(__file__)) + '/../weights/xfeat.pt', top_k = 4096):
+	def __init__(self, weights = os.path.abspath(os.path.dirname(__file__)) + '/../weights/xfeat.pt', top_k = 4096, width= 640,height=480):
 		super().__init__()
 		self.dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		self.net = XFeatModel().to(self.dev).eval()
 		self.top_k = top_k
+		self.sum = 0
+		self.frames_num = 0
+
+		self.model_name = ''
+		self.hef_path = ''
+		if width == 640 and height == 480:
+			hailo_model_name_480_640 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_'
+			hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
+			self.model_name = hailo_model_name_480_640
+			self.hef_path = hailo_model_name_480_640_path
+		if width == 320 and height == 240:
+			hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
+			hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
+			self.model_name = hailo_model_name_224_320
+			self.hef_path = hailo_model_name_224_320_path
 		
-		# self.hailo_model = Hailo(hef_path = 'hailo_files/x_feature_13_without_pixel_unshuffle_sim_without_head.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+		
 		# self.hailo_model = Hailo(hef_path = 'x_feature_13_without_pixel_unshuffle_normilize_sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
-		# self.hailo_model = Hailo(hef_path = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
-		self.hailo_model = Hailo(hef_path = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
-		self.session = ort.InferenceSession("hailo_files/x_feature_13_without_pixel_unshuffle_sim_only_head.onnx")
-		# self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle.onnx")
+		self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+		# self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx")
 		self.onnx_input_names = [input.name for input in self.session.get_inputs()]
 		self.onnx_output_names = [output.name for output in self.session.get_outputs()]
 
+		self._nearest = InterpolateSparse2d('nearest')
+		self._bilinear = InterpolateSparse2d('bilinear')
 		if weights is not None:
 			if isinstance(weights, str):
 				print('loading weights from: ' + weights)
@@ -51,61 +67,31 @@ class XFeat(nn.Module):
 	def convert_to_onnx(self, x):
 		torch.onnx.export(self.net,
 		          args=(x),
-		          f='./x_feature_13_without_pixel_unshuffle_normilize_softmax_slice.onnx',
+		          f='./x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_test_model.onnx',
 		          input_names=['INPUT_1'],
 		          output_names=['OUTPUT_1', 'OUTPUT_2', 'OUTPUT_3'],
 		          verbose=True, 
 		          export_params=True, 
 		          training=torch.onnx.TrainingMode.PRESERVE, 
-		          do_constant_folding=False,
+		          do_constant_folding=True,
 		          opset_version=13)
 		exit()
 		
 	def infer_onnx(self, x):
-		input_names = [input.name for input in session.get_inputs()]
-		output_names = [output.name for output in session.get_outputs()]
+		input_names = [input.name for input in self.onnx_only_session.get_inputs()]
+		output_names = [output.name for output in self.onnx_only_session.get_outputs()]
 		net_input = {input_names[0]: x.numpy()}
-		outputs = session.run(output_names, net_input)
+		outputs = self.onnx_only_session.run(output_names, net_input)
 		# return outputs
 		return torch.from_numpy(outputs[0]), torch.from_numpy(outputs[1]), torch.from_numpy(outputs[2]) 
 	
 	def hailo_infer_per(self, x):
-		# start = time.time()
 		onnx_output = self.session.run(self.onnx_output_names, {self.onnx_input_names[0]: x.numpy()})
-		# norm_out = self.hailo_input_convertion.infer_slow(np.transpose(x.numpy().astype(np.uint8),(0, 2, 3, 1)))
-		# ew_mult = np.multiply(norm_out['x_feature_13_without_pixel_unshuffle_sim_only_head/ew_sub1'],norm_out['x_feature_13_without_pixel_unshuffle_sim_only_head/resize2'])
-		# print(onnx_output[0].shape)
-		# print(ew_mult.shape)
-		# print(np.transpose(onnx_output[0],(0, 2, 3, 1))-ew_mult)
-		# print(np.transpose(onnx_output[0],(0, 2, 3, 1)))
-		# print(ew_mult)
-		# exit()
-		# onnx_output = np.transpose(onnx_output[0],(0, 2, 3, 1))
-		# end = time.time()
-		# print("onnx time ",end-start)
-		# start = time.time()
 		infer_results = self.hailo_model.infer(np.transpose(onnx_output[0],(0, 2, 3, 1)))
-		# infer_results = self.hailo_model.infer_slow(ew_mult)
-		# end = time.time()
-		# print("hailo model time ",end-start)
-
-		# OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv9']
-		# OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv24']
-		# OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_sim_without_head/conv27']
-		
-		# OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_sim/conv9']
-		# OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_sim/ew_mult1']
-		# OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_sim/conv27']
-
-		# OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_softmax_sim/ew_mult_softmax1']
-		# OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_softmax_sim/ew_mult1']
-		# OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_softmax_sim/conv27']
-
-		OUTPUT_1 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim/slice1']
-		OUTPUT_2 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim/ew_mult1']
-		OUTPUT_3 = infer_results['x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim/conv27']
-
-		return torch.Tensor(np.transpose(OUTPUT_2,(0,3,1,2))), torch.Tensor(np.transpose(OUTPUT_1,(0,3,1,2))), torch.Tensor(np.transpose(OUTPUT_3,(0,3,1,2)))
+		OUTPUT_1 = infer_results[f'{self.model_name}sim/slice1']
+		OUTPUT_2 = infer_results[f'{self.model_name}sim/ew_mult1']
+		OUTPUT_3 = infer_results[f'{self.model_name}sim/conv27']
+		return torch.Tensor(np.transpose(OUTPUT_2,(0,3,1,2))), OUTPUT_1, torch.Tensor(np.transpose(OUTPUT_3,(0,3,1,2)))
 
 
 	@torch.inference_mode()
@@ -125,25 +111,16 @@ class XFeat(nn.Module):
 		if top_k is None: top_k = self.top_k
 		x, rh1, rw1 = self.preprocess_tensor(x)
 		
-		# session = load_model("hailo/x_feature_13_without_pixel_unshuffle_sim_only_head.onnx")
-		# outputs = run_model(session, x.numpy())
-		# onnx_output = np.transpose(outputs[0],(0, 2, 3, 1))
-		# np.save(f'preprocess_include_onnx_head/{time.time()}',onnx_output)
-		
-		# print(x.shape)
-		# np.save(f'preprocess_dataset_0_255/{time.time()}', x)
-		# np.save(f'test_input/{time.time()}', x)
-		# y = np.load('test_input/1716277911.824664.npy')
-		# x = torch.Tensor(y)
 		B, _, _H1, _W1 = x.shape
 
 		# self.convert_to_onnx(x)
 		# M1, K1, H1 = self.net(x)
+		# K1 = K1.permute(0,2,3,1)
 		# M1, K1, H1 = self.infer_onnx(x)
-		# start = time.time()
+		start = time.time()
 		M1, K1, H1 = self.hailo_infer_per(x)
-		# end = time.time()
-		# print("hailo+onnx ",end-start)
+		end = time.time()
+		print("hailo+onnx ",end-start)
 		# print(M1.shape,M1_.shape)
 		# print(K1.shape,K1_.shape)
 		# print(H1.shape,H1_.shape)
@@ -158,13 +135,17 @@ class XFeat(nn.Module):
 		# M1 = F.normalize(M1, dim=1) #in comment because its now part of the network
 
 		#Convert logits to heatmap and extract kpts
+		# test = K1.numpy()
+		#get_kpts_heatmap
 		# start = time.time()
-		K1h = self.get_kpts_heatmap(K1)
+		B, H, W, _= K1.shape
+		# B, _, H, W= K1.shape
+		K1h = K1.reshape(B, H, W, 8, 8).transpose(0, 3, 1, 4, 2).reshape(B, 1, H * 8, W * 8)
+		K1h = torch.Tensor(K1h)
 		mkpts = self.NMS(K1h, threshold=0.05, kernel_size=5)
 		#Compute reliability scores
-		_nearest = InterpolateSparse2d('nearest')
-		_bilinear = InterpolateSparse2d('bilinear')
-		scores = (_nearest(K1h, mkpts, _H1, _W1) * _bilinear(H1, mkpts, _H1, _W1)).squeeze(-1)
+
+		scores = (self._nearest(K1h, mkpts, _H1, _W1) * self._bilinear(H1, mkpts, _H1, _W1)).squeeze(-1)
 		scores[torch.all(mkpts == 0, dim=-1)] = -1
 
 		#Select top-k features
@@ -183,8 +164,13 @@ class XFeat(nn.Module):
 		mkpts = mkpts * torch.tensor([rw1,rh1], device=mkpts.device).view(1, 1, -1)
 
 		valid = scores > 0
-		# end = time.time()
-		# print("post process ",end-start)
+
+# 		end = time.time()
+# 		self.frames_num = self.frames_num + 1
+# 		self.sum = self.sum + end-start
+# 		# print(self.sum)
+# 		# print(self.frames_num)
+		# print("post process ",self.sum/self.frames_num)
 		return [  
 				   {'keypoints': mkpts[b][valid[b]],
 					'scores': scores[b][valid[b]],
@@ -283,34 +269,31 @@ class XFeat(nn.Module):
 		x = F.interpolate(x, (_H, _W), mode='bilinear', align_corners=False)
 		return x, rh, rw
 
-	# def get_kpts_heatmap(self, kpts, softmax_temp = 1.0):
-	# 	# start = time.time()
-	# 	scores = F.softmax(kpts*softmax_temp, 1)[:, :64]
-	# 	# end = time.time()
-	# 	# print("interpulator ",end-start)
-	# 	B, _, H, W = scores.shape
-	# 	heatmap = scores.permute(0, 2, 3, 1).reshape(B, H, W, 8, 8)
-	# 	heatmap = heatmap.permute(0, 1, 3, 2, 4).reshape(B, 1, H*8, W*8)
-	# 	return heatmap
-
-	def get_kpts_heatmap(self, scores):
-		# start = time.time()
-		# end = time.time()
-		# print("interpulator ",end-start)
-		B, _, H, W = scores.shape
-		heatmap = scores.permute(0, 2, 3, 1).reshape(B, H, W, 8, 8)
-		heatmap = heatmap.permute(0, 1, 3, 2, 4).reshape(B, 1, H*8, W*8)
-		return heatmap
-
 	def NMS(self, x, threshold = 0.05, kernel_size = 5):
-		B, _, H, W = x.shape
+		B = x.shape[0]
 		pad=kernel_size//2
-		# start = time.time()
 		local_max = nn.MaxPool2d(kernel_size=kernel_size, stride=1, padding=pad)(x)
-		# end = time.time()
-		# print("nms ", end-start)
-		pos = (x == local_max) & (x > threshold)
-		pos_batched = [k.nonzero()[..., 1:].flip(-1) for k in pos]
+		
+		# import ipdb; ipdb.set_trace()
+		# print(x.shape)
+		# pos = (x == local_max) & (x > threshold)
+		pos = np.logical_and(x == local_max, x > threshold)
+		# pos = torch.logical_and(x == local_max, x > threshold)
+		# pos = torch.Tensor(pos)
+		# x = torch.Tensor(x)
+
+		start = time.time()
+		# pos_batched = [pos[0].nonzero()[..., 1:].flip(-1)]
+		pos_batched = [torch.Tensor(np.nonzero(pos[0])[..., 1:]).flip(-1)]
+		# indices_np = np.nonzero(pos[0])[..., 1:]
+		# stacked_indices_np = np.stack(indices_np, axis=-1)
+		# pos_batched = np.flip(stacked_indices_np, axis=-1)
+		# pos_batched = np.transpose(pos_batched, (1, 0))
+		# pos_batched = [k.nonzero()[..., 1:].flip(-1) for k in pos]
+		# pos_batched = torch.Tensor(pos_batched.copy())
+		# x = torch.Tensor(x)
+		end = time.time()
+
 
 		pad_val = max([len(x) for x in pos_batched])
 		pos = torch.zeros((B, pad_val, 2), dtype=torch.long, device=x.device)
@@ -319,6 +302,9 @@ class XFeat(nn.Module):
 		for b in range(len(pos_batched)):
 			pos[b, :len(pos_batched[b]), :] = pos_batched[b]
 
+		self.sum = self.sum + end-start
+		self.frames_num = self.frames_num + 1
+		print("nms ", self.sum/self.frames_num)
 		return pos
 
 	@torch.inference_mode()

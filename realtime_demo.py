@@ -17,8 +17,8 @@ from modules.xfeat import XFeat
 
 def argparser():
     parser = argparse.ArgumentParser(description="Configurations for the real-time matching demo.")
-    parser.add_argument('--width', type=int, default=640, help='Width of the video capture stream.')
-    parser.add_argument('--height', type=int, default=480, help='Height of the video capture stream.')
+    parser.add_argument('--width', type=int, default=640, help='Width of the video capture stream. only 640x320 or 320x240 resolution')
+    parser.add_argument('--height', type=int, default=480, help='Height of the video capture stream. only 640x320 or 320x240 resolution')
     parser.add_argument('--max_kpts', type=int, default=3_000, help='Maximum number of keypoints.')
     parser.add_argument('--method', type=str, choices=['ORB', 'SIFT', 'XFeat'], default='XFeat', help='Local feature detection method to use.')
     parser.add_argument('--cam', type=int, default=0, help='Webcam device number.')
@@ -59,13 +59,13 @@ class Method:
         self.descriptor = descriptor
         self.matcher = matcher
 
-def init_method(method, max_kpts):
+def init_method(method, max_kpts, width, height):
     if method == "ORB":
         return Method(descriptor=cv2.ORB_create(max_kpts, fastThreshold=10), matcher=cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True))
     elif method == "SIFT":
         return Method(descriptor=cv2.SIFT_create(max_kpts, contrastThreshold=-1, edgeThreshold=1000), matcher=cv2.BFMatcher(cv2.NORM_L2, crossCheck=True))
     elif method == "XFeat":
-        return Method(descriptor=CVWrapper(XFeat(top_k = max_kpts)), matcher=XFeat())
+        return Method(descriptor=CVWrapper(XFeat(top_k = max_kpts, width=width, height=height)), matcher=XFeat(width=width, height=height))
     else:
         raise RuntimeError("Invalid Method.")
 
@@ -78,7 +78,7 @@ class MatchingDemo:
         self.height = args.height
         self.ref_frame = None
         self.ref_precomp = [[],[]]
-        self.corners = [[50, 50], [640-50, 50], [640-50, 480-50], [50, 480-50]]
+        self.corners = [[50, 50], [self.width-50, 50], [self.width-50, self.height-50], [50, self.height-50]]
         self.current_frame = None
         self.H = None
         self.setup_camera()
@@ -97,7 +97,7 @@ class MatchingDemo:
         self.max_cnt = 30 #avg FPS over this number of frames
 
         #Set local feature method here -- we expect cv2 or Kornia convention
-        self.method = init_method(args.method, max_kpts=args.max_kpts)
+        self.method = init_method(args.method, max_kpts=args.max_kpts, width= self.width, height=self.height)
         
         # Setting up font for captions
         self.font = cv2.FONT_HERSHEY_SIMPLEX
@@ -157,7 +157,7 @@ class MatchingDemo:
         return warped_points
 
     def create_top_frame(self):
-        top_frame_canvas = np.zeros((480, 1280, 3), dtype=np.uint8)
+        top_frame_canvas = np.zeros((self.height, self.width*2, 3), dtype=np.uint8)
         top_frame = np.hstack((self.ref_frame, self.current_frame))
         color = (3, 186, 252)
         cv2.rectangle(top_frame, (2, 2), (self.width*2-2, self.height-2), color, 5)  # Orange color line as a separator
@@ -167,7 +167,7 @@ class MatchingDemo:
         self.putText(canvas=top_frame_canvas, text="Reference Frame:", org=(10, 30), fontFace=self.font, 
             fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
 
-        self.putText(canvas=top_frame_canvas, text="Target Frame:", org=(650, 30), fontFace=self.font, 
+        self.putText(canvas=top_frame_canvas, text="Target Frame:", org=(self.width+10, 30), fontFace=self.font, 
                     fontScale=self.font_scale,  textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
         
         self.draw_quad(top_frame_canvas, self.corners)
@@ -201,10 +201,10 @@ class MatchingDemo:
             kp1, des1 = self.ref_precomp
             kp2, des2 = self.method.descriptor.detectAndCompute(current_frame, None)
         else:
-            start = time()
+            # start = time()
             current = self.method.descriptor.detectAndCompute(current_frame)
-            end = time()
-            print(end-start)
+            # end = time()
+            # print(end-start)
             kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
             kpts2, descs2 = current['keypoints'], current['descriptors']
             idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
@@ -254,7 +254,7 @@ class MatchingDemo:
             fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
         
                 # Adding captions on the top frame canvas
-        self.putText(canvas=matched_frame, text="FPS (registration): {:.1f}".format(self.FPS), org=(650, 30), fontFace=self.font, 
+        self.putText(canvas=matched_frame, text="FPS (registration): {:.1f}".format(self.FPS), org=(self.width+10, 30), fontFace=self.font, 
             fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
 
         return matched_frame

@@ -156,5 +156,8 @@ class XFeatModel(nn.Module):
 		# keypoints = self.keypoint_head(F.pixel_unshuffle(x, 8)) # the pixel_unshuffle becomes (reshape -> transpose -> resape) in onnx, hailo cant complie 
 		keypoints = self.keypoint_head(x) #changed the convolution after the pixel_unshuffle to replace the pixel_unshuffle 
 		keypoints = F.softmax(keypoints*1.0, 1)[:, :64]
+		# B, _, H, W = keypoints.shape
+		# keypoints_heatmap = keypoints.view(B, 8, 8, H, W).permute(0, 3, 1, 4, 2).reshape(B, 1, H * 8, W * 8)
 
+		# return feats_norm, keypoints_heatmap, heatmap
 		return feats_norm, keypoints, heatmap

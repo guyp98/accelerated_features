@@ -22,6 +22,7 @@ def argparser():
     parser.add_argument('--max_kpts', type=int, default=3_000, help='Maximum number of keypoints.')
     parser.add_argument('--method', type=str, choices=['ORB', 'SIFT', 'XFeat'], default='XFeat', help='Local feature detection method to use.')
     parser.add_argument('--cam', type=int, default=0, help='Webcam device number.')
+    parser.add_argument('--inference_type', type=str, default='hailo', help='"hailo" or torch or onnx')
     return parser.parse_args()
 
 
@@ -59,13 +60,13 @@ class Method:
         self.descriptor = descriptor
         self.matcher = matcher
 
-def init_method(method, max_kpts, width, height):
+def init_method(method, max_kpts, width, height, device):
     if method == "ORB":
         return Method(descriptor=cv2.ORB_create(max_kpts, fastThreshold=10), matcher=cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True))
     elif method == "SIFT":
         return Method(descriptor=cv2.SIFT_create(max_kpts, contrastThreshold=-1, edgeThreshold=1000), matcher=cv2.BFMatcher(cv2.NORM_L2, crossCheck=True))
     elif method == "XFeat":
-        return Method(descriptor=CVWrapper(XFeat(top_k = max_kpts, width=width, height=height)), matcher=XFeat(width=width, height=height))
+        return Method(descriptor=CVWrapper(XFeat(top_k = max_kpts, width=width, height=height, device=device)), matcher=XFeat(width=width, height=height, device=device))
     else:
         raise RuntimeError("Invalid Method.")
 
@@ -76,6 +77,7 @@ class MatchingDemo:
         self.cap = cv2.VideoCapture(args.cam)
         self.width = args.width
         self.height = args.height
+        self.device = args.inference_type
         self.ref_frame = None
         self.ref_precomp = [[],[]]
         self.corners = [[50, 50], [self.width-50, 50], [self.width-50, self.height-50], [50, self.height-50]]
@@ -97,7 +99,7 @@ class MatchingDemo:
         self.max_cnt = 30 #avg FPS over this number of frames
 
         #Set local feature method here -- we expect cv2 or Kornia convention
-        self.method = init_method(args.method, max_kpts=args.max_kpts, width= self.width, height=self.height)
+        self.method = init_method(args.method, max_kpts=args.max_kpts, width= self.width, height=self.height, device=self.device)
         
         # Setting up font for captions
         self.font = cv2.FONT_HERSHEY_SIMPLEX

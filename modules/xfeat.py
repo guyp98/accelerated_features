@@ -15,15 +15,17 @@ import tqdm
 from hailo_platform import (FormatType)
 from modules.model import *
 from modules.interpolator import InterpolateSparse2d
-# from skimage.util.shape import view_as_windows
 
+# device= 'hailo'
+# # device= 'torch'
+# # device= 'onnx'
 class XFeat(nn.Module):
 	""" 
 		Implements the inference module for XFeat. 
 		It supports inference for both sparse and semi-dense feature extraction & matching.
 	"""
 
-	def __init__(self, weights = os.path.abspath(os.path.dirname(__file__)) + '/../weights/xfeat.pt', top_k = 4096, width= 640,height=480):
+	def __init__(self, weights = os.path.abspath(os.path.dirname(__file__)) + '/../weights/xfeat.pt', top_k = 4096, width= 640,height=480, device= 'hailo'):
 		super().__init__()
 		self.dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		self.net = XFeatModel().to(self.dev).eval()
@@ -31,25 +33,29 @@ class XFeat(nn.Module):
 		self.sum = 0
 		self.frames_num = 0
 
-		self.model_name = ''
-		self.hef_path = ''
-		if width == 640 and height == 480:
-			hailo_model_name_480_640 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_'
-			hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
-			self.model_name = hailo_model_name_480_640
-			self.hef_path = hailo_model_name_480_640_path
-		if width == 320 and height == 240:
-			hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
-			hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
-			self.model_name = hailo_model_name_224_320
-			self.hef_path = hailo_model_name_224_320_path
-		
-		
-		# self.hailo_model = Hailo(hef_path = 'x_feature_13_without_pixel_unshuffle_normilize_sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
-		self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
-		# self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx")
-		self.onnx_input_names = [input.name for input in self.session.get_inputs()]
-		self.onnx_output_names = [output.name for output in self.session.get_outputs()]
+		self.device = device
+		if self.device == 'hailo':
+			self.model_name = ''
+			self.hef_path = ''
+			if width == 640 and height == 480:
+				hailo_model_name_480_640 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_'
+				hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
+				self.model_name = hailo_model_name_480_640
+				self.hef_path = hailo_model_name_480_640_path
+			if width == 320 and height == 240:
+				hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
+				hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
+				self.model_name = hailo_model_name_224_320
+				self.hef_path = hailo_model_name_224_320_path
+			self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+			self.session = ort.InferenceSession(f'{self.hef_path}{self.model_name}only_head.onnx')
+			self.onnx_input_names = [input.name for input in self.session.get_inputs()]
+			self.onnx_output_names = [output.name for output in self.session.get_outputs()]
+			
+		elif self.device == 'torch':
+			pass
+		elif self.device == 'onnx':
+			self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx")
 
 		self._nearest = InterpolateSparse2d('nearest')
 		self._bilinear = InterpolateSparse2d('bilinear')
@@ -114,33 +120,25 @@ class XFeat(nn.Module):
 		B, _, _H1, _W1 = x.shape
 
 		# self.convert_to_onnx(x)
-		# M1, K1, H1 = self.net(x)
-		# K1 = K1.permute(0,2,3,1)
-		# M1, K1, H1 = self.infer_onnx(x)
+		if self.device == 'torch':
+			M1, K1, H1 = self.net(x)
+		elif self.device == 'hailo':
+			start = time.time()
+			M1, K1, H1 = self.hailo_infer_per(x)
+			end = time.time()
+			print("hailo+onnx ",end-start)
+		elif self.device == 'onnx':
+			M1, K1, H1 = self.infer_onnx(x)
+
+
 		start = time.time()
-		M1, K1, H1 = self.hailo_infer_per(x)
-		end = time.time()
-		print("hailo+onnx ",end-start)
-		# print(M1.shape,M1_.shape)
-		# print(K1.shape,K1_.shape)
-		# print(H1.shape,H1_.shape)
-		# print(M1-M1_)
-		# print(M1)
-		# print(K1-K1_)
-		# print(K1)
-		# print(H1-H1_)
-		# print(H1)
-		# exit()
-
-		# M1 = F.normalize(M1, dim=1) #in comment because its now part of the network
-
-		#Convert logits to heatmap and extract kpts
-		# test = K1.numpy()
-		#get_kpts_heatmap
-		# start = time.time()
-		B, H, W, _= K1.shape
-		# B, _, H, W= K1.shape
-		K1h = K1.reshape(B, H, W, 8, 8).transpose(0, 3, 1, 4, 2).reshape(B, 1, H * 8, W * 8)
+		if self.device == 'hailo':
+			B, H, W, _= K1.shape
+			K1h = K1.reshape(B, H, W, 8, 8).transpose(0, 3, 1, 4, 2).reshape(B, 1, H * 8, W * 8)
+		elif self.device == 'torch':
+			K1h = self.get_kpts_heatmap(K1)
+		elif self.device == 'onnx':
+			K1h = self.get_kpts_heatmap(K1)
 		K1h = torch.Tensor(K1h)
 		mkpts = self.NMS(K1h, threshold=0.05, kernel_size=5)
 		#Compute reliability scores
@@ -165,12 +163,12 @@ class XFeat(nn.Module):
 
 		valid = scores > 0
 
-# 		end = time.time()
-# 		self.frames_num = self.frames_num + 1
-# 		self.sum = self.sum + end-start
-# 		# print(self.sum)
-# 		# print(self.frames_num)
-		# print("post process ",self.sum/self.frames_num)
+		end = time.time()
+		self.frames_num = self.frames_num + 1
+		self.sum = self.sum + end-start
+		# print(self.sum)
+		# print(self.frames_num)
+		print("post process ",self.sum/self.frames_num)
 		return [  
 				   {'keypoints': mkpts[b][valid[b]],
 					'scores': scores[b][valid[b]],
@@ -269,6 +267,13 @@ class XFeat(nn.Module):
 		x = F.interpolate(x, (_H, _W), mode='bilinear', align_corners=False)
 		return x, rh, rw
 
+	def get_kpts_heatmap(self, x):
+		# scores = F.softmax(kpts*softmax_temp, 1)[:, :64]
+		B, _, H, W = x.shape
+		heatmap = x.permute(0, 2, 3, 1).reshape(B, H, W, 8, 8)
+		heatmap = heatmap.permute(0, 1, 3, 2, 4).reshape(B, 1, H*8, W*8)
+		return heatmap
+	
 	def NMS(self, x, threshold = 0.05, kernel_size = 5):
 		B = x.shape[0]
 		pad=kernel_size//2
@@ -277,12 +282,12 @@ class XFeat(nn.Module):
 		# import ipdb; ipdb.set_trace()
 		# print(x.shape)
 		# pos = (x == local_max) & (x > threshold)
+		# start = time.time()
 		pos = np.logical_and(x == local_max, x > threshold)
 		# pos = torch.logical_and(x == local_max, x > threshold)
 		# pos = torch.Tensor(pos)
 		# x = torch.Tensor(x)
 
-		start = time.time()
 		# pos_batched = [pos[0].nonzero()[..., 1:].flip(-1)]
 		pos_batched = [torch.Tensor(np.nonzero(pos[0])[..., 1:]).flip(-1)]
 		# indices_np = np.nonzero(pos[0])[..., 1:]
@@ -292,7 +297,7 @@ class XFeat(nn.Module):
 		# pos_batched = [k.nonzero()[..., 1:].flip(-1) for k in pos]
 		# pos_batched = torch.Tensor(pos_batched.copy())
 		# x = torch.Tensor(x)
-		end = time.time()
+		# end = time.time()
 
 
 		pad_val = max([len(x) for x in pos_batched])
@@ -302,9 +307,9 @@ class XFeat(nn.Module):
 		for b in range(len(pos_batched)):
 			pos[b, :len(pos_batched[b]), :] = pos_batched[b]
 
-		self.sum = self.sum + end-start
-		self.frames_num = self.frames_num + 1
-		print("nms ", self.sum/self.frames_num)
+		# self.sum = self.sum + end-start
+		# self.frames_num = self.frames_num + 1
+		# print("nms ", self.sum/self.frames_num)
 		return pos
 
 	@torch.inference_mode()

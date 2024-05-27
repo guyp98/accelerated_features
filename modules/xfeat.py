@@ -48,10 +48,12 @@ class XFeat(nn.Module):
 				self.model_name = hailo_model_name_224_320
 				self.hef_path = hailo_model_name_224_320_path
 			self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
-			self.session = ort.InferenceSession(f'{self.hef_path}{self.model_name}only_head.onnx')
-			self.onnx_input_names = [input.name for input in self.session.get_inputs()]
-			self.onnx_output_names = [output.name for output in self.session.get_outputs()]
 			
+			self.preprocess_onnx = False
+			if self.preprocess_onnx:
+				self.session = ort.InferenceSession(f'{self.hef_path}{self.model_name}only_head.onnx')
+				self.onnx_input_names = [input.name for input in self.session.get_inputs()]
+				self.onnx_output_names = [output.name for output in self.session.get_outputs()]
 		elif self.device == 'torch':
 			pass
 		elif self.device == 'onnx':
@@ -92,8 +94,13 @@ class XFeat(nn.Module):
 		return torch.from_numpy(outputs[0]), torch.from_numpy(outputs[1]), torch.from_numpy(outputs[2]) 
 	
 	def hailo_infer_per(self, x):
-		onnx_output = self.session.run(self.onnx_output_names, {self.onnx_input_names[0]: x.numpy()})
-		infer_results = self.hailo_model.infer(np.transpose(onnx_output[0],(0, 2, 3, 1)))
+		if self.preprocess_onnx:
+			onnx_output = self.session.run(self.onnx_output_names, {self.onnx_input_names[0]: x.numpy()})
+			x = onnx_output[0]
+		else:
+			x = x.mean(dim=1, keepdim = True)
+			x = nn.InstanceNorm2d(1)(x).numpy()
+		infer_results = self.hailo_model.infer(np.transpose(x,(0, 2, 3, 1)))
 		OUTPUT_1 = infer_results[f'{self.model_name}sim/slice1']
 		OUTPUT_2 = infer_results[f'{self.model_name}sim/ew_mult1']
 		OUTPUT_3 = infer_results[f'{self.model_name}sim/conv27']
@@ -126,7 +133,7 @@ class XFeat(nn.Module):
 			start = time.time()
 			M1, K1, H1 = self.hailo_infer_per(x)
 			end = time.time()
-			print("hailo+onnx ",end-start)
+			print("preprocess+hailo ",end-start)
 		elif self.device == 'onnx':
 			M1, K1, H1 = self.infer_onnx(x)
 
@@ -279,26 +286,9 @@ class XFeat(nn.Module):
 		pad=kernel_size//2
 		local_max = nn.MaxPool2d(kernel_size=kernel_size, stride=1, padding=pad)(x)
 		
-		# import ipdb; ipdb.set_trace()
-		# print(x.shape)
-		# pos = (x == local_max) & (x > threshold)
-		# start = time.time()
 		pos = np.logical_and(x == local_max, x > threshold)
-		# pos = torch.logical_and(x == local_max, x > threshold)
-		# pos = torch.Tensor(pos)
-		# x = torch.Tensor(x)
 
-		# pos_batched = [pos[0].nonzero()[..., 1:].flip(-1)]
-		pos_batched = [torch.Tensor(np.nonzero(pos[0])[..., 1:]).flip(-1)]
-		# indices_np = np.nonzero(pos[0])[..., 1:]
-		# stacked_indices_np = np.stack(indices_np, axis=-1)
-		# pos_batched = np.flip(stacked_indices_np, axis=-1)
-		# pos_batched = np.transpose(pos_batched, (1, 0))
-		# pos_batched = [k.nonzero()[..., 1:].flip(-1) for k in pos]
-		# pos_batched = torch.Tensor(pos_batched.copy())
-		# x = torch.Tensor(x)
-		# end = time.time()
-
+		pos_batched = [k.nonzero()[..., 1:].flip(-1) for k in pos]
 
 		pad_val = max([len(x) for x in pos_batched])
 		pos = torch.zeros((B, pad_val, 2), dtype=torch.long, device=x.device)
@@ -307,9 +297,6 @@ class XFeat(nn.Module):
 		for b in range(len(pos_batched)):
 			pos[b, :len(pos_batched[b]), :] = pos_batched[b]
 
-		# self.sum = self.sum + end-start
-		# self.frames_num = self.frames_num + 1
-		# print("nms ", self.sum/self.frames_num)
 		return pos
 
 	@torch.inference_mode()

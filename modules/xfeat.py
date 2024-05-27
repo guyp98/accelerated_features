@@ -11,14 +11,10 @@ import torch.nn.functional as F
 import time
 import onnxruntime as ort
 from modules.hailo import Hailo
-import tqdm
 from hailo_platform import (FormatType)
 from modules.model import *
 from modules.interpolator import InterpolateSparse2d
 
-# device= 'hailo'
-# # device= 'torch'
-# # device= 'onnx'
 class XFeat(nn.Module):
 	""" 
 		Implements the inference module for XFeat. 
@@ -73,9 +69,10 @@ class XFeat(nn.Module):
 		self.interpolator = InterpolateSparse2d('bicubic')
 	
 	def convert_to_onnx(self, x):
+		name = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_test_model.onnx'
 		torch.onnx.export(self.net,
 		          args=(x),
-		          f='./x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_test_model.onnx',
+		          f=f'./{name}',
 		          input_names=['INPUT_1'],
 		          output_names=['OUTPUT_1', 'OUTPUT_2', 'OUTPUT_3'],
 		          verbose=True, 
@@ -83,6 +80,7 @@ class XFeat(nn.Module):
 		          training=torch.onnx.TrainingMode.PRESERVE, 
 		          do_constant_folding=True,
 		          opset_version=13)
+		print(f'succsefuly exported to onnx named {name}')
 		exit()
 		
 	def infer_onnx(self, x):
@@ -130,10 +128,10 @@ class XFeat(nn.Module):
 		if self.device == 'torch':
 			M1, K1, H1 = self.net(x)
 		elif self.device == 'hailo':
-			start = time.time()
+			# start = time.time()
 			M1, K1, H1 = self.hailo_infer_per(x)
-			end = time.time()
-			print("preprocess+hailo ",end-start)
+			# end = time.time()
+			# print("preprocess+hailo ",end-start)
 		elif self.device == 'onnx':
 			M1, K1, H1 = self.infer_onnx(x)
 

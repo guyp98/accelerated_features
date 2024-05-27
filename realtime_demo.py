@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from time import time, sleep
-import argparse, sys, tqdm
+import argparse, sys
 import threading
 
 from modules.xfeat import XFeat

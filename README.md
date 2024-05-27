@@ -40,7 +40,7 @@ This repository contains the official implementation of the paper: *[XFeat: Acce
 
 **Capabilities.**
 - Real-time sparse inference on CPU for VGA images (tested on laptop with an i5 CPU and vanilla pytorch);
-- Simple architecture components which facilitates deployment on embedded devices (jetson, raspberry pi, custom AI chips, etc..);
+- Simple architecture components which facilitates deployment on embedded devices (jetson, raspberry pi, hailo 8, etc..);
 - Supports both sparse and semi-dense matching of local features;
 - Compact descriptors (64D);
 - Performance comparable to known deep local features such as SuperPoint while being significantly faster and more lightweight. Also, XFeat exhibits much better robustness to viewpoint and illumination changes than classic local features as ORB and SIFT;
@@ -64,22 +64,20 @@ If you use conda, just create a new env with:
 git clone https://github.com/verlab/accelerated_features.git
 cd accelerated_features
 
-#Create conda env
-conda create -n xfeat python=3.8
-conda activate xfeat
+#create hailo env
+python3 -m venv xfeat_hailo
+. ./xfeat_hailo/bin/activate
+pip install torch
+pip install opencv-python
+pip install onnxruntime
+pip install hailort-4.17.0-cp310-cp310-linux_x86_64.whl  #can be found
+
+#Run Demo
+python3 realtime_demo.py --inference_type hailo
+#or
+python3 realtime_demo.py --width 320 --height 240 --inference_type hailo
 ```
 
-Then, install [pytorch (>=1.10)](https://pytorch.org/get-started/previous-versions/) and then the rest of depencencies in case you want to run the demos:
-```bash
-
-#CPU only, for GPU check in pytorch website the most suitable version to your gpu.
-pip install torch==1.10.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-# CPU only for MacOS
-# pip install torch==1.10.1 -f https://download.pytorch.org/whl/cpu/torch_stable.html
-
-#Install dependencies for the demo
-pip install opencv-contrib-python tqdm
-```
 
 ## Usage
 
@@ -141,7 +139,14 @@ Or test with SIFT or ORB:
 python3 realtime_demo.py --method SIFT
 python3 realtime_demo.py --method ORB
 ```
-
+To infer using hailo8 or torch or onnx:
+```bash
+python3 realtime_demo.py --width 320 --height 240 --inference_type hailo
+```
+or
+```bash
+python3 realtime_demo.py --inference_type hailo
+```
 ## Contributing
 Contributions to XFeat are welcome! 
 Currently, it would be nice to have an export script to efficient deployment engines such as TensorRT and ONNX. Also, it would be cool to train a lightweight learned matcher on top of XFeat local features.

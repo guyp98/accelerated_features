@@ -17,8 +17,8 @@ from modules.xfeat import XFeat
 
 def argparser():
     parser = argparse.ArgumentParser(description="Configurations for the real-time matching demo.")
-    parser.add_argument('--width', type=int, default=640, help='Width of the video capture stream. only 640x320 or 320x240 resolution')
-    parser.add_argument('--height', type=int, default=480, help='Height of the video capture stream. only 640x320 or 320x240 resolution')
+    parser.add_argument('--width', type=int, default=640, help='Width of the video capture stream. only 640x480 or 320x224 resolution')
+    parser.add_argument('--height', type=int, default=480, help='Height of the video capture stream. only 640x480 or 320x224 resolution')
     parser.add_argument('--max_kpts', type=int, default=3_000, help='Maximum number of keypoints.')
     parser.add_argument('--method', type=str, choices=['ORB', 'SIFT', 'XFeat'], default='XFeat', help='Local feature detection method to use.')
     parser.add_argument('--cam', type=int, default=0, help='Webcam device number.')
@@ -27,11 +27,13 @@ def argparser():
 
 
 class FrameGrabber(threading.Thread):
-    def __init__(self, cap):
+    def __init__(self, cap, width, height):
         super().__init__()
         self.cap = cap
         _, self.frame = self.cap.read()
         self.running = False
+        self.width = width
+        self.height = height
 
     def run(self):
         self.running = True
@@ -47,6 +49,7 @@ class FrameGrabber(threading.Thread):
         self.cap.release()
 
     def get_last_frame(self):
+        self.frame = np.resize(self.frame, (self.height, self.width, 3))
         return self.frame
 
 class CVWrapper():
@@ -86,7 +89,7 @@ class MatchingDemo:
         self.setup_camera()
 
         #Init frame grabber thread
-        self.frame_grabber = FrameGrabber(self.cap)
+        self.frame_grabber = FrameGrabber(self.cap, self.width, self.height)
         self.frame_grabber.start()
 
         #Homography params

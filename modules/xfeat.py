@@ -53,7 +53,7 @@ class XFeat(nn.Module):
 		elif self.device == 'torch':
 			pass
 		elif self.device == 'onnx':
-			self.onnx_only_session = ort.InferenceSession("x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx")
+			self.onnx_only_session = ort.InferenceSession("hailo_files/x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx")
 
 		self._nearest = InterpolateSparse2d('nearest')
 		self._bilinear = InterpolateSparse2d('bilinear')

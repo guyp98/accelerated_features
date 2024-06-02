@@ -15,7 +15,7 @@ from hailo_platform import (FormatType)
 from modules.model import *
 from modules.interpolator import InterpolateSparse2d
 
-class XFeat(nn.Module):
+class 		XFeat(nn.Module):
 	""" 
 		Implements the inference module for XFeat. 
 		It supports inference for both sparse and semi-dense feature extraction & matching.
@@ -60,8 +60,10 @@ class XFeat(nn.Module):
 		if weights is not None:
 			if isinstance(weights, str):
 				print('loading weights from: ' + weights)
-				state_dict = torch.load(weights, map_location=self.dev)
-				state_dict['keypoint_head.0.layer.0.weight'] = state_dict['keypoint_head.0.layer.0.weight'].reshape(64,1,8,8)
+				# state_dict = torch.load(weights, map_location=self.dev)
+				# state_dict['keypoint_head.0.layer.0.weight'] = state_dict['keypoint_head.0.layer.0.weight'].reshape(64,1,8,8)
+				# torch.save(state_dict, 'modified_state_dict.pt')
+				state_dict = torch.load(os.path.abspath(os.path.dirname(__file__)) + '/../weights/modified_state_dict.pt', map_location=self.dev)
 				self.net.load_state_dict(state_dict)
 			else:
 				self.net.load_state_dict(weights)
@@ -136,7 +138,6 @@ class XFeat(nn.Module):
 			M1, K1, H1 = self.infer_onnx(x)
 
 
-		start = time.time()
 		if self.device == 'hailo':
 			B, H, W, _= K1.shape
 			K1h = K1.reshape(B, H, W, 8, 8).transpose(0, 3, 1, 4, 2).reshape(B, 1, H * 8, W * 8)
@@ -144,6 +145,7 @@ class XFeat(nn.Module):
 			K1h = self.get_kpts_heatmap(K1)
 		elif self.device == 'onnx':
 			K1h = self.get_kpts_heatmap(K1)
+		start = time.time()
 		K1h = torch.Tensor(K1h)
 		mkpts = self.NMS(K1h, threshold=0.05, kernel_size=5)
 		#Compute reliability scores
@@ -264,7 +266,6 @@ class XFeat(nn.Module):
 		if isinstance(x, np.ndarray) and x.shape == 3:
 			x = torch.tensor(x).permute(2,0,1)[None]
 		x = x.to(self.dev).float()
-
 		H, W = x.shape[-2:]
 		_H, _W = (H//32) * 32, (W//32) * 32
 		rh, rw = H/_H, W/_W

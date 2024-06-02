@@ -12,7 +12,6 @@ import torch
 from time import time, sleep
 import argparse, sys
 import threading
-
 from modules.xfeat import XFeat
 
 def argparser():
@@ -206,10 +205,7 @@ class MatchingDemo:
             kp1, des1 = self.ref_precomp
             kp2, des2 = self.method.descriptor.detectAndCompute(current_frame, None)
         else:
-            # start = time()
             current = self.method.descriptor.detectAndCompute(current_frame)
-            # end = time()
-            # print(end-start)
             kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
             kpts2, descs2 = current['keypoints'], current['descriptors']
             idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
@@ -245,7 +241,6 @@ class MatchingDemo:
 
             # Draw matches
             matched_frame = cv2.drawMatches(ref_frame, kp1, current_frame, kp2, good_matches, None, matchColor=(0, 200, 0), flags=2)
-            
         else:
             matched_frame = np.hstack([ref_frame, current_frame])
 

@@ -13,6 +13,7 @@ from time import time, sleep
 import argparse, sys
 import threading
 from modules.xfeat import XFeat
+import queue
 
 def argparser():
     parser = argparse.ArgumentParser(description="Configurations for the real-time matching demo.")
@@ -21,6 +22,7 @@ def argparser():
     parser.add_argument('--max_kpts', type=int, default=3_000, help='Maximum number of keypoints.')
     parser.add_argument('--method', type=str, choices=['ORB', 'SIFT', 'XFeat'], default='XFeat', help='Local feature detection method to use.')
     parser.add_argument('--cam', type=int, default=0, help='Webcam device number.')
+    parser.add_argument('--video_path', type=str, default="", help='video path.')
     parser.add_argument('--inference_type', type=str, default='hailo', help='"hailo" or torch or onnx')
     return parser.parse_args()
 
@@ -30,6 +32,7 @@ class FrameGrabber(threading.Thread):
         super().__init__()
         self.cap = cap
         _, self.frame = self.cap.read()
+        self.second_last_frame = self.frame
         self.running = False
         self.width = width
         self.height = height
@@ -40,6 +43,7 @@ class FrameGrabber(threading.Thread):
             ret, frame = self.cap.read()
             if not ret:
                 print("Can't receive frame (stream ended?).")
+            self.second_last_frame = self.frame
             self.frame = frame
             sleep(0.01)
 
@@ -50,6 +54,9 @@ class FrameGrabber(threading.Thread):
     def get_last_frame(self):
         self.frame = np.resize(self.frame, (self.height, self.width, 3))
         return self.frame
+    
+    def get_second_last_frame(self):
+        return self.second_last_frame
 
 class CVWrapper():
     def __init__(self, mtd):
@@ -72,20 +79,49 @@ def init_method(method, max_kpts, width, height, device):
     else:
         raise RuntimeError("Invalid Method.")
 
-def draw_lines(image, points1, points2, thickness=1):
-    for i in range(len(points1)):
-        image = cv2.line(image, (int(points1[i][0]),int(points1[i][1])), (int(points2[i][0]),int(points2[i][1])), (0, 255, 0), thickness)
+def draw_lines(image, all_matchs, thickness=3):
+    for match in all_matchs:
+        points1 = match[0]
+        points2 = match[1]
+        # import ipdb; ipdb.set_trace()
+        for point1, point2 in zip(points1, points2):
+            # euclidea_distance_2d = np.linalg.norm(np.array(point1) - np.array(point2))
+            # image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (int(np.clip(50+euclidea_distance_2d*3, 0,255)), int(100+euclidea_distance_2d), int(np.clip(euclidea_distance_2d*5, 0,255))), thickness)
+            image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (0, 255, 0), thickness)
+            # cv2.imshow("matches", image)
+            # cv2.waitKey(200)
+        # image = cv2.line(image, (int(points1[i][0]),int(points1[i][1])), (int(points2[i][0]),int(points2[i][1])), (0, 255, 0), thickness)
     return image
+
+class rectCash:
+    def __init__(self, max_size):
+        self.max_size = max_size
+        self.matchs = []
+    
+    def add_match(self, match):
+        self.matchs.append(match)
+        self.clean_old_match()
+
+    def clean_old_match(self):
+        if len(self.matchs) > self.max_size:
+            self.matchs.pop(0)
+    
+    def get_matchs(self):
+        return self.matchs
+    
+    
 class MatchingDemo:
     def __init__(self, args):
         self.args = args
-        self.cap = cv2.VideoCapture(args.cam)
+        self.cap = cv2.VideoCapture(args.cam) if args.video_path == "" else cv2.VideoCapture(args.video_path)
         self.width = args.width
         self.height = args.height
         self.device = args.inference_type
+        self.matchs_cash = rectCash(5)
         self.ref_frame = None
         self.ref_precomp = [[],[]]
-        self.corners = [[50, 50], [self.width-50, 50], [self.width-50, self.height-50], [50, self.height-50]]
+        self.margin = 100
+        self.corners = [[self.margin, self.margin], [self.width-self.margin, self.margin], [self.width-self.margin, self.height-self.margin], [self.margin, self.height-self.margin]]
         self.current_frame = None
         self.H = None
         self.setup_camera()
@@ -95,7 +131,7 @@ class MatchingDemo:
         self.frame_grabber.start()
 
         #Homography params
-        self.min_inliers = 50
+        self.min_inliers = self.margin
         self.ransac_thr = 4.0
 
         #FPS check
@@ -133,12 +169,23 @@ class MatchingDemo:
             print("Cannot open camera")
             exit()
 
-    def draw_quad(self, frame, point_list):
+    def draw_quad(self, frame, point_list, color = (0, 255, 0), thickness = 3):
         if len(self.corners) > 1:
             for i in range(len(self.corners) - 1):
-                cv2.line(frame, tuple(point_list[i]), tuple(point_list[i + 1]), self.line_color, self.line_thickness, lineType = self.line_type)
+                # cv2.circle(frame, point_list[i], 5, (0, 255, 0), -1)
+                cv2.line(frame, tuple(point_list[i]), tuple(point_list[i + 1]), color, thickness, lineType = self.line_type)
             if len(self.corners) == 4:  # Close the quadrilateral if 4 corners are defined
-                cv2.line(frame, tuple(point_list[3]), tuple(point_list[0]), self.line_color, self.line_thickness, lineType = self.line_type)
+                # cv2.circle(frame, point_list[3], 5, (0, 255, 0), -1)
+                cv2.line(frame, tuple(point_list[3]), tuple(point_list[0]), color, thickness, lineType = self.line_type)
+
+    def draw_points(self, frame, point_list, color = (0, 255, 0), thickness = 3):
+        if len(self.corners) > 1:
+            for i in range(len(self.corners) - 1):
+                cv2.circle(frame, point_list[i], 5, color, -1)
+                # cv2.line(frame, tuple(point_list[i]), tuple(point_list[i + 1]), color, thickness, lineType = self.line_type)
+            if len(self.corners) == 4:  # Close the quadrilateral if 4 corners are defined
+                cv2.circle(frame, point_list[3], 5, color, -1)
+                # cv2.line(frame, tuple(point_list[3]), tuple(point_list[0]), color, thickness, lineType = self.line_type)
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -190,7 +237,13 @@ class MatchingDemo:
 
         # Draw warped corners
         if self.H is not None and len(self.corners) > 1:
-            self.draw_quad(top_frame_canvas, self.warp_points(self.corners, self.H, self.width))
+            rect = self.warp_points(self.corners, self.H, self.width)
+            self.draw_quad(top_frame_canvas, rect)
+            self.matchs_cash.add_match(rect)
+            for i, rect in enumerate(self.matchs_cash.get_matchs()):
+                # print(rect)
+                # self.draw_quad(top_frame_canvas, rect)
+                self.draw_points(top_frame_canvas, rect, color=((i+1)*70, (i+1)*70, (i+1)*70))
 
         # Stack top and bottom frames vertically on the final canvas
         canvas = np.vstack((top_frame_canvas, bottom_frame))
@@ -208,19 +261,30 @@ class MatchingDemo:
             kp1, des1 = self.ref_precomp
             kp2, des2 = self.method.descriptor.detectAndCompute(current_frame, None)
         else:
-            # print(current_frame.shape)
-            # print(current_frame)
+            # prev = self.method.descriptor.detectAndCompute(self.frame_grabber.get_second_last_frame())
             current = self.method.descriptor.detectAndCompute(current_frame)
-            kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
+            # kpts1, descs1 = prev['keypoints'], prev['descriptors']
             kpts2, descs2 = current['keypoints'], current['descriptors']
+
+            # idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
+            # points1 = kpts1[idx0].cpu().numpy()
+            # points2 = kpts2[idx1].cpu().numpy()
+            
+            # self.matchs_cash.add_match([points1, points2])
+            # start = time()
+            # image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
+            # print("guy line drawing time: ", time()-start)
+            # cv2.imshow("matches", image)
+
+
+            kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
+
             # print(kpts2.shape)
             # print(descs2.shape)
             idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
             points1 = kpts1[idx0].cpu().numpy()
             points2 = kpts2[idx1].cpu().numpy()
-            # import ipdb; ipdb.set_trace()
-            image = draw_lines(current_frame, points1, points2)
-            cv2.imshow("matches", image)
+            
 
         if len(kp1) > 10 and len(kp2) > 10 and self.args.method in ['SIFT', 'ORB']:
             # Match descriptors
@@ -235,6 +299,17 @@ class MatchingDemo:
                     points2[i, :] = kp2[match.trainIdx].pt
 
         if len(points1) > 10 and len(points2) > 10:
+            # prev = self.method.descriptor.detectAndCompute(self.frame_grabber.get_second_last_frame())
+            # kpts1, descs1 = prev['keypoints'], prev['descriptors']
+            # idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
+            # points_flow1 = kpts1[idx0].cpu().numpy()
+            # points_flow2 = kpts2[idx1].cpu().numpy()
+            # _, inliers_flow = cv2.findHomography(points_flow1, points_flow2, cv2.USAC_MAGSAC, self.ransac_thr, maxIters=700, confidence=0.995)
+            # inliers_flow = inliers_flow.flatten() > 0
+            # self.matchs_cash.add_match([points_flow1[inliers_flow], points_flow2[inliers_flow]])
+            # image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
+            # cv2.imshow("matches", image)
+           
             # Find homography
             self.H, inliers = cv2.findHomography(points1, points2, cv2.USAC_MAGSAC, self.ransac_thr, maxIters=700, confidence=0.995)
             inliers = inliers.flatten() > 0
@@ -248,12 +323,14 @@ class MatchingDemo:
                 kp1 = [cv2.KeyPoint(p[0],p[1], 5) for p in points1[inliers]]
                 kp2 = [cv2.KeyPoint(p[0],p[1], 5) for p in points2[inliers]]
                 good_matches = [cv2.DMatch(i,i,0) for i in range(len(kp1))]
-                # import ipdb; ipdb.set_trace()
+            
+            
+
 
             # Draw matches
             matched_frame = cv2.drawMatches(ref_frame, kp1, current_frame, kp2, good_matches, None, matchColor=(0, 200, 0), flags=2)
-            # cv2.imshow("matches", matched_frame)
-            # cv2.waitKey(2000)
+#             cv2.imshow("matches", matched_frame)
+            # cv2.waitKey(1)
         else:
             matched_frame = np.hstack([ref_frame, current_frame])
 

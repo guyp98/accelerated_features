@@ -85,15 +85,15 @@ def draw_lines(image, all_matchs, thickness=3):
         points2 = match[1]
         # import ipdb; ipdb.set_trace()
         for point1, point2 in zip(points1, points2):
-            # euclidea_distance_2d = np.linalg.norm(np.array(point1) - np.array(point2))
-            # image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (int(np.clip(50+euclidea_distance_2d*3, 0,255)), int(100+euclidea_distance_2d), int(np.clip(euclidea_distance_2d*5, 0,255))), thickness)
-            image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (0, 255, 0), thickness)
+            euclidea_distance_2d = np.linalg.norm(np.array(point1) - np.array(point2))
+            image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (int(np.clip(50+euclidea_distance_2d*3, 0,255)), int(100+euclidea_distance_2d), int(np.clip(euclidea_distance_2d*5, 0,255))), thickness)
+            # image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (0, 255, 0), thickness)
             # cv2.imshow("matches", image)
             # cv2.waitKey(200)
         # image = cv2.line(image, (int(points1[i][0]),int(points1[i][1])), (int(points2[i][0]),int(points2[i][1])), (0, 255, 0), thickness)
     return image
 
-class rectCash:
+class Cash:
     def __init__(self, max_size):
         self.max_size = max_size
         self.matchs = []
@@ -117,14 +117,16 @@ class MatchingDemo:
         self.width = args.width
         self.height = args.height
         self.device = args.inference_type
-        self.matchs_cash = rectCash(5)
+        self.rect_cash = Cash(5)
+        self.matchs_cash = Cash(5)
         self.ref_frame = None
         self.ref_precomp = [[],[]]
         self.margin = 100
         self.corners = [[self.margin, self.margin], [self.width-self.margin, self.margin], [self.width-self.margin, self.height-self.margin], [self.margin, self.height-self.margin]]
         self.current_frame = None
         self.H = None
-        self.setup_camera()
+        if args.video_path == "":
+            self.setup_camera()
 
         #Init frame grabber thread
         self.frame_grabber = FrameGrabber(self.cap, self.width, self.height)
@@ -239,11 +241,9 @@ class MatchingDemo:
         if self.H is not None and len(self.corners) > 1:
             rect = self.warp_points(self.corners, self.H, self.width)
             self.draw_quad(top_frame_canvas, rect)
-            self.matchs_cash.add_match(rect)
-            for i, rect in enumerate(self.matchs_cash.get_matchs()):
-                # print(rect)
-                # self.draw_quad(top_frame_canvas, rect)
-                self.draw_points(top_frame_canvas, rect, color=((i+1)*70, (i+1)*70, (i+1)*70))
+            # self.rect_cash.add_match(rect)
+            # for i, rect in enumerate(self.rect_cash.get_matchs()):
+            #     self.draw_points(top_frame_canvas, rect, color=((i+1)*70, (i+1)*70, (i+1)*70))
 
         # Stack top and bottom frames vertically on the final canvas
         canvas = np.vstack((top_frame_canvas, bottom_frame))
@@ -299,17 +299,14 @@ class MatchingDemo:
                     points2[i, :] = kp2[match.trainIdx].pt
 
         if len(points1) > 10 and len(points2) > 10:
-            # prev = self.method.descriptor.detectAndCompute(self.frame_grabber.get_second_last_frame())
-            # kpts1, descs1 = prev['keypoints'], prev['descriptors']
-            # idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
-            # points_flow1 = kpts1[idx0].cpu().numpy()
-            # points_flow2 = kpts2[idx1].cpu().numpy()
+            points_flow1 ,points_flow2 =self.method.descriptor.mtd.match_xfeat_star(np.copy(current_frame), self.frame_grabber.get_last_frame(), 500) 
             # _, inliers_flow = cv2.findHomography(points_flow1, points_flow2, cv2.USAC_MAGSAC, self.ransac_thr, maxIters=700, confidence=0.995)
             # inliers_flow = inliers_flow.flatten() > 0
-            # self.matchs_cash.add_match([points_flow1[inliers_flow], points_flow2[inliers_flow]])
-            # image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
-            # cv2.imshow("matches", image)
+            self.matchs_cash.add_match([points_flow1, points_flow2])
+            image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
+            cv2.imshow("matches", image)
            
+
             # Find homography
             self.H, inliers = cv2.findHomography(points1, points2, cv2.USAC_MAGSAC, self.ransac_thr, maxIters=700, confidence=0.995)
             inliers = inliers.flatten() > 0
@@ -324,6 +321,8 @@ class MatchingDemo:
                 kp2 = [cv2.KeyPoint(p[0],p[1], 5) for p in points2[inliers]]
                 good_matches = [cv2.DMatch(i,i,0) for i in range(len(kp1))]
             
+            # image = cv2.drawKeypoints(np.copy(current_frame), [cv2.KeyPoint(p[0],p[1], 5) for p in points2[inliers]], 0)
+            # cv2.imshow("matches", image)
             
 
 

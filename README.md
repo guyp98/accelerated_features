@@ -61,7 +61,7 @@ XFeat has minimal dependencies, only relying on torch. Also, XFeat does not need
 We recommend using conda, but you can use any virtualenv of your choice.
 If you use conda, just create a new env with:
 ```bash
-git clone https://github.com/verlab/accelerated_features.git
+git clone [https://github.com/verlab/accelerated_features.git](https://github.com/guyp98/accelerated_features.git)
 cd accelerated_features
 
 #create hailo env
@@ -70,7 +70,8 @@ python3 -m venv xfeat_hailo
 pip install torch
 pip install opencv-python
 pip install onnxruntime
-pip install hailort-4.17.0-cp310-cp310-linux_x86_64.whl  #can be found
+pip install tdqn
+pip install hailort-4.17.0-cp310-cp310-linux_x86_64.whl  #can be found in hailo developer zone
 
 #Run Demo
 python3 realtime_demo.py --inference_type hailo

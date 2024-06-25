@@ -84,13 +84,21 @@ def draw_lines(image, all_matchs, thickness=3):
         points1 = match[0]
         points2 = match[1]
         # import ipdb; ipdb.set_trace()
+        sum_distance = 0
+        avrg_distance = 0
+        num_points = 0
         for point1, point2 in zip(points1, points2):
             euclidea_distance_2d = np.linalg.norm(np.array(point1) - np.array(point2))
-            image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (int(np.clip(50+euclidea_distance_2d*3, 0,255)), int(100+euclidea_distance_2d), int(np.clip(euclidea_distance_2d*5, 0,255))), thickness)
-            # image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (0, 255, 0), thickness)
-            # cv2.imshow("matches", image)
-            # cv2.waitKey(200)
-        # image = cv2.line(image, (int(points1[i][0]),int(points1[i][1])), (int(points2[i][0]),int(points2[i][1])), (0, 255, 0), thickness)
+            if num_points < 10 or 3*avrg_distance > euclidea_distance_2d:
+                image = cv2.line(image, (int(point1[0]),int(point1[1])), (int(point2[0]),int(point2[1])), (int(np.clip(50+euclidea_distance_2d*3, 0,255)), int(50+euclidea_distance_2d), int(np.clip(euclidea_distance_2d*3, 0,255))), thickness)
+                sum_distance += euclidea_distance_2d
+                num_points += 1
+                avrg_distance = sum_distance/num_points
+    return image
+
+def draw_points(image, points, color = (0, 255, 0), thickness = 3):
+    for point in points:
+        image = cv2.circle(image, (int(point[0]),int(point[1])), thickness, color, -1)
     return image
 
 class Cash:
@@ -113,20 +121,23 @@ class Cash:
 class MatchingDemo:
     def __init__(self, args):
         self.args = args
-        self.cap = cv2.VideoCapture(args.cam) if args.video_path == "" else cv2.VideoCapture(args.video_path)
         self.width = args.width
         self.height = args.height
         self.device = args.inference_type
         self.rect_cash = Cash(5)
-        self.matchs_cash = Cash(5)
+        self.matchs_cash = Cash(1)
         self.ref_frame = None
         self.ref_precomp = [[],[]]
         self.margin = 100
         self.corners = [[self.margin, self.margin], [self.width-self.margin, self.margin], [self.width-self.margin, self.height-self.margin], [self.margin, self.height-self.margin]]
         self.current_frame = None
         self.H = None
+        self.prev_compute = None
         if args.video_path == "":
+            self.cap = cv2.VideoCapture(args.cam) 
             self.setup_camera()
+        else:
+            self.cap = cv2.VideoCapture(args.video_path)
 
         #Init frame grabber thread
         self.frame_grabber = FrameGrabber(self.cap, self.width, self.height)
@@ -154,11 +165,11 @@ class MatchingDemo:
         self.window_name = "Real-time matching - Press 's' to set the reference frame."
 
         # Removes toolbar and status bar
-        cv2.namedWindow(self.window_name, flags=cv2.WINDOW_GUI_NORMAL)
+        # cv2.namedWindow(self.window_name, flags=cv2.WINDOW_GUI_NORMAL)
         # Set the window size
-        cv2.resizeWindow(self.window_name, self.width*2, self.height*2)
+        # cv2.resizeWindow(self.window_name, self.width*2, self.height*2)
         #Set Mouse Callback
-        cv2.setMouseCallback(self.window_name, self.mouse_callback)
+        # cv2.setMouseCallback(self.window_name, self.mouse_callback)
 
     def setup_camera(self):
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
@@ -250,6 +261,22 @@ class MatchingDemo:
 
         cv2.imshow(self.window_name, canvas)
 
+    def match_and_draw_visual_flow(self, current_frame):
+        start = time()
+        if self.prev_compute is None:
+            points_flow1 ,points_flow2, self.prev_compute, _null =self.method.descriptor.mtd.match_xfeat_star(np.copy(current_frame), self.frame_grabber.get_last_frame()) 
+        else:
+            points_flow1 ,points_flow2, self.prev_compute =self.method.descriptor.mtd.match_xfeat_star_bootstrap(self.prev_compute, np.copy(current_frame))
+        # points_flow1 ,points_flow2 =self.method.descriptor.mtd.match_xfeat(np.copy(current_frame), self.frame_grabber.get_last_frame()) 
+        print("Time to match: ", time()-start)
+        start = time()
+        self.matchs_cash.add_match([points_flow1, points_flow2])
+        image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
+        # image = draw_points(np.copy(current_frame), points_flow2)
+        print("Time to draw: ", time()-start)
+        cv2.imshow("matches", image)
+        cv2.waitKey(1)
+
     def match_and_draw(self, ref_frame, current_frame):
 
         matches, good_matches = [], []
@@ -261,26 +288,10 @@ class MatchingDemo:
             kp1, des1 = self.ref_precomp
             kp2, des2 = self.method.descriptor.detectAndCompute(current_frame, None)
         else:
-            # prev = self.method.descriptor.detectAndCompute(self.frame_grabber.get_second_last_frame())
             current = self.method.descriptor.detectAndCompute(current_frame)
-            # kpts1, descs1 = prev['keypoints'], prev['descriptors']
             kpts2, descs2 = current['keypoints'], current['descriptors']
-
-            # idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
-            # points1 = kpts1[idx0].cpu().numpy()
-            # points2 = kpts2[idx1].cpu().numpy()
-            
-            # self.matchs_cash.add_match([points1, points2])
-            # start = time()
-            # image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
-            # print("guy line drawing time: ", time()-start)
-            # cv2.imshow("matches", image)
-
-
             kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
 
-            # print(kpts2.shape)
-            # print(descs2.shape)
             idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
             points1 = kpts1[idx0].cpu().numpy()
             points2 = kpts2[idx1].cpu().numpy()
@@ -299,12 +310,6 @@ class MatchingDemo:
                     points2[i, :] = kp2[match.trainIdx].pt
 
         if len(points1) > 10 and len(points2) > 10:
-            points_flow1 ,points_flow2 =self.method.descriptor.mtd.match_xfeat_star(np.copy(current_frame), self.frame_grabber.get_last_frame(), 500) 
-            # _, inliers_flow = cv2.findHomography(points_flow1, points_flow2, cv2.USAC_MAGSAC, self.ransac_thr, maxIters=700, confidence=0.995)
-            # inliers_flow = inliers_flow.flatten() > 0
-            self.matchs_cash.add_match([points_flow1, points_flow2])
-            image = draw_lines(np.copy(current_frame), self.matchs_cash.get_matchs())
-            cv2.imshow("matches", image)
            
 
             # Find homography
@@ -351,21 +356,23 @@ class MatchingDemo:
     def main_loop(self):
         self.current_frame = self.frame_grabber.get_last_frame()
         self.ref_frame = self.current_frame.copy()
-        self.ref_precomp = self.method.descriptor.detectAndCompute(self.ref_frame, None) #Cache ref features
+        # self.ref_precomp = self.method.descriptor.detectAndCompute(self.ref_frame, None) #Cache ref features
 
         while True:
             if self.current_frame is None:
                 break
 
             t0 = time()
-            self.process()
+            # self.process()
+            self.match_and_draw_visual_flow(self.current_frame)
+
 
             key = cv2.waitKey(1)
             if key == ord('q'):
                 break
-            elif key == ord('s'):
-                self.ref_frame = self.current_frame.copy()  # Update reference frame
-                self.ref_precomp = self.method.descriptor.detectAndCompute(self.ref_frame, None) #Cache ref features
+            # elif key == ord('s'):
+                # self.ref_frame = self.current_frame.copy()  # Update reference frame
+                # self.ref_precomp = self.method.descriptor.detectAndCompute(self.ref_frame, None) #Cache ref features
 
             self.current_frame = self.frame_grabber.get_last_frame()
 
@@ -374,6 +381,7 @@ class MatchingDemo:
             if len(self.time_list) > self.max_cnt:
                 self.time_list.pop(0)
             self.FPS = 1.0 / np.array(self.time_list).mean()
+            print(self.FPS)
         
         self.cleanup()
 

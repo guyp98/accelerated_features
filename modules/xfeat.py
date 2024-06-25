@@ -33,17 +33,26 @@ class 		XFeat(nn.Module):
 		if self.device == 'hailo':
 			self.model_name = ''
 			self.hef_path = ''
-			if width == 640 and height == 480:
-				hailo_model_name_480_640 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_'
-				hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
-				self.model_name = hailo_model_name_480_640
-				self.hef_path = hailo_model_name_480_640_path
-			if width == 320 and height == 224:
-				hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
-				hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
-				self.model_name = hailo_model_name_224_320
-				self.hef_path = hailo_model_name_224_320_path
-			self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+			# if width == 640 and height == 480:
+			# 	hailo_model_name_480_640 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_'
+			# 	hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
+			# 	self.model_name = hailo_model_name_480_640
+			# 	self.hef_path = hailo_model_name_480_640_path
+			# 	self.sim = 'sim'
+			# if width == 320 and height == 224:
+			# 	hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
+			# 	hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
+			# 	self.model_name = hailo_model_name_224_320
+			# 	self.hef_path = hailo_model_name_224_320_path
+			# 	self.sim = 'sim'
+			# elif width == 640 and height == 480:
+			hailo_model_name_288_384 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_288_384'
+			hailo_model_name_288_384_path = 'hailo_files/model_288_384/'
+			self.model_name = hailo_model_name_288_384
+			self.hef_path = hailo_model_name_288_384_path
+			self.sim = ''
+			self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}{self.sim}.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
+			self.hailo_model_bigger = Hailo(hef_path = f'hailo_files/model_624_832/x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_624_832.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
 			
 			self.preprocess_onnx = False
 			if self.preprocess_onnx:
@@ -71,7 +80,7 @@ class 		XFeat(nn.Module):
 		self.interpolator = InterpolateSparse2d('bicubic')
 	
 	def convert_to_onnx(self, x):
-		name = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_test_model.onnx'
+		name = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_624_832.onnx'
 		torch.onnx.export(self.net,
 		          args=(x),
 		          f=f'./{name}',
@@ -79,7 +88,7 @@ class 		XFeat(nn.Module):
 		          output_names=['OUTPUT_1', 'OUTPUT_2', 'OUTPUT_3'],
 		          verbose=True, 
 		          export_params=True, 
-		          training=torch.onnx.TrainingMode.PRESERVE, 
+		          training=torch.onnx.TrainingMode.EVAL, 
 		          do_constant_folding=True,
 		          opset_version=13)
 		print(f'succsefuly exported to onnx named {name}')
@@ -100,10 +109,23 @@ class 		XFeat(nn.Module):
 		else:
 			x = x.mean(dim=1, keepdim = True)
 			x = nn.InstanceNorm2d(1)(x).numpy()
-		infer_results = self.hailo_model.infer(np.transpose(x,(0, 2, 3, 1)))
-		OUTPUT_1 = infer_results[f'{self.model_name}sim/slice1']
-		OUTPUT_2 = infer_results[f'{self.model_name}sim/ew_mult1']
-		OUTPUT_3 = infer_results[f'{self.model_name}sim/conv27']
+		infer_results = self.hailo_model.infer_slow(np.transpose(x,(0, 2, 3, 1)))
+		OUTPUT_1 = infer_results[f'{self.model_name}{self.sim}/slice1']
+		OUTPUT_2 = infer_results[f'{self.model_name}{self.sim}/ew_mult1']
+		OUTPUT_3 = infer_results[f'{self.model_name}{self.sim}/conv27']
+		return torch.Tensor(np.transpose(OUTPUT_2,(0,3,1,2))), OUTPUT_1, torch.Tensor(np.transpose(OUTPUT_3,(0,3,1,2)))
+	
+	def hailo_infer_per_bigger_model(self, x):
+		if self.preprocess_onnx:
+			onnx_output = self.session.run(self.onnx_output_names, {self.onnx_input_names[0]: x.numpy()})
+			x = onnx_output[0]
+		else:
+			x = x.mean(dim=1, keepdim = True)
+			x = nn.InstanceNorm2d(1)(x).numpy()
+		infer_results = self.hailo_model_bigger.infer_slow(np.transpose(x,(0, 2, 3, 1)))
+		OUTPUT_1 = infer_results[f'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_624_832/slice1']
+		OUTPUT_2 = infer_results[f'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_624_832/ew_mult1']
+		OUTPUT_3 = infer_results[f'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_624_832/conv27']
 		return torch.Tensor(np.transpose(OUTPUT_2,(0,3,1,2))), OUTPUT_1, torch.Tensor(np.transpose(OUTPUT_3,(0,3,1,2)))
 
 
@@ -244,7 +266,6 @@ class 		XFeat(nn.Module):
 		if top_k is None: top_k = self.top_k
 		im_set1 = self.parse_input(im_set1)
 		im_set2 = self.parse_input(im_set2)
-
 		#Compute coarse feats
 		out1 = self.detectAndComputeDense(im_set1, top_k=top_k)
 		out2 = self.detectAndComputeDense(im_set2, top_k=top_k)
@@ -258,8 +279,39 @@ class 		XFeat(nn.Module):
 		matches = []
 		for b in range(B):
 			matches.append(self.refine_matches(out1, out2, matches = idxs_list, batch_idx=b))
+		# import pdb; pdb.set_trace()
+		return matches if B > 1 else (matches[0][:, :2].cpu().numpy(), matches[0][:, 2:].cpu().numpy(), out1, out2)
+	
+	@torch.inference_mode()
+	def match_xfeat_star_bootstrap(self, out1_prev, im_set2, top_k = None):#TODO coped code here, solve this later
+		"""
+			Extracts coarse feats, then match pairs and finally refine matches, currently supports batched mode.
+			input:
+				im_set1 -> torch.Tensor(B, C, H, W) or np.ndarray (H,W,C): grayscale or rgb images.
+				im_set2 -> torch.Tensor(B, C, H, W) or np.ndarray (H,W,C): grayscale or rgb images.
+				top_k -> int: keep best k features
+			returns:
+				matches -> List[torch.Tensor(N, 4)]: List of size B containing tensor of pairwise matches (x1,y1,x2,y2)
+		"""
+		if top_k is None: top_k = self.top_k
+		im_set2 = self.parse_input(im_set2)
 
-		return matches if B > 1 else (matches[0][:, :2].cpu().numpy(), matches[0][:, 2:].cpu().numpy())
+		#Compute coarse feats
+		out1 = out1_prev
+		start = time.time()
+		out2 = self.detectAndComputeDense(im_set2, top_k=top_k)
+		print("detectAndComputeDense ",time.time()-start)
+
+		#Match batches of pairs
+		idxs_list = self.batch_match(out1['descriptors'], out2['descriptors'] )
+		B = len(im_set2)
+
+		#Refine coarse matches
+		#this part is harder to batch, currently iterate
+		matches = []
+		for b in range(B):
+			matches.append(self.refine_matches(out1, out2, matches = idxs_list, batch_idx=b))
+		return matches if B > 1 else (matches[0][:, :2].cpu().numpy(), matches[0][:, 2:].cpu().numpy(), out2)
 
 	def preprocess_tensor(self, x):
 		""" Guarantee that image is divisible by 32 to avoid aliasing artifacts. """
@@ -304,7 +356,6 @@ class 		XFeat(nn.Module):
 		cossim = torch.bmm(feats1, feats2.permute(0,2,1))
 		match12 = torch.argmax(cossim, dim=-1)
 		match21 = torch.argmax(cossim.permute(0,2,1), dim=-1)
-
 		idx0 = torch.arange(len(match12[0]), device=match12.device)
 
 		batched_matches = []
@@ -322,7 +373,6 @@ class 		XFeat(nn.Module):
 				idx1_b = match12[b][mutual]
 
 			batched_matches.append((idx0_b, idx1_b))
-
 		return batched_matches
 
 	def subpix_softmax2d(self, heatmaps, temp = 3):
@@ -340,6 +390,7 @@ class 		XFeat(nn.Module):
 		return coords
 
 	def refine_matches(self, d0, d1, matches, batch_idx, fine_conf = 0.25):
+		start = time.time()
 		idx0, idx1 = matches[batch_idx]
 		feats1 = d0['descriptors'][batch_idx][idx0]
 		feats2 = d1['descriptors'][batch_idx][idx1]
@@ -348,12 +399,25 @@ class 		XFeat(nn.Module):
 		sc0 = d0['scales'][batch_idx][idx0]
 
 		#Compute fine offsets
+		# name = 'fine_matcher.onnx'
+		# torch.onnx.export(self.net.fine_matcher,
+		#           args=(torch.cat([feats1, feats2],dim=-1)),
+		#           f=f'./{name}',
+		#           input_names=['INPUT_1'],
+		#           output_names=['OUTPUT_1'],
+		#           verbose=True, 
+		#           export_params=True, 
+		#           training=torch.onnx.TrainingMode.EVAL, 
+		#           do_constant_folding=True,
+		#           opset_version=13)
+		# exit()
 		offsets = self.net.fine_matcher(torch.cat([feats1, feats2],dim=-1))
 		conf = F.softmax(offsets*3, dim=-1).max(dim=-1)[0]
 		offsets = self.subpix_softmax2d(offsets.view(-1,8,8))
-
 		mkpts_0 += offsets* (sc0[:,None]) #*0.9 #* (sc0[:,None])
 
+		end = time.time()
+		print("fine matcher ",end-start)
 		mask_good = conf > fine_conf
 		mkpts_0 = mkpts_0[mask_good]
 		mkpts_1 = mkpts_1[mask_good]
@@ -393,16 +457,23 @@ class 		XFeat(nn.Module):
 		if top_k < 1:
 			top_k = 100_000_000
 
+		# print(x.shape)
 		x, rh1, rw1 = self.preprocess_tensor(x)
-
-		M1, K1, H1 = self.net(x)
-		
+		start = time.time()
+		# M1, K1, H1 = self.net(x)
+		if x.shape[3] == 832: 
+			# self.convert_to_onnx(x)
+			# exit()
+			M1, K1, H1 = self.hailo_infer_per_bigger_model(x)
+		else:
+			M1, K1, H1 = self.hailo_infer_per(x)
 		B, C, _H1, _W1 = M1.shape
 		
 		xy1 = (self.create_xy(_H1, _W1, M1.device) * 8).expand(B,-1,-1)
 
 		M1 = M1.permute(0,2,3,1).reshape(B, -1, C)
 		H1 = H1.permute(0,2,3,1).reshape(B, -1)
+		print("net ",time.time()-start)
 
 		_, top_k = torch.topk(H1, k = min(len(H1[0]), top_k), dim=-1)
 
@@ -413,11 +484,11 @@ class 		XFeat(nn.Module):
 		return mkpts, feats
 
 	def extract_dualscale(self, x, top_k, s1 = 0.6, s2 = 1.3):
+		start = time.time()
 		x1 = F.interpolate(x, scale_factor=s1, align_corners=False, mode='bilinear')
 		x2 = F.interpolate(x, scale_factor=s2, align_corners=False, mode='bilinear')
-
+		print("interpolate ",time.time()-start)
 		B, _, _, _ = x.shape
-
 		mkpts_1, feats_1 = self.extractDense(x1, int(top_k*0.20))
 		mkpts_2, feats_2 = self.extractDense(x2, int(top_k*0.80))
 

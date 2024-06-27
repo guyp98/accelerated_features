@@ -114,11 +114,11 @@ class MatchingDemo:
         self.window_name = "Real-time matching - Press 's' to set the reference frame."
 
         # Removes toolbar and status bar
-        cv2.namedWindow(self.window_name, flags=cv2.WINDOW_GUI_NORMAL)
-        # Set the window size
-        cv2.resizeWindow(self.window_name, self.width*2, self.height*2)
-        #Set Mouse Callback
-        cv2.setMouseCallback(self.window_name, self.mouse_callback)
+        # cv2.namedWindow(self.window_name, flags=cv2.WINDOW_GUI_NORMAL)
+        # # Set the window size
+        # cv2.resizeWindow(self.window_name, self.width*2, self.height*2)
+        # #Set Mouse Callback
+        # cv2.setMouseCallback(self.window_name, self.mouse_callback)
 
     def setup_camera(self):
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
@@ -181,19 +181,19 @@ class MatchingDemo:
 
     def process(self):
         # Create a blank canvas for the top frame
-        top_frame_canvas = self.create_top_frame()
+        # top_frame_canvas = self.create_top_frame()
 
         # Match features and draw matches on the bottom frame
         bottom_frame = self.match_and_draw(self.ref_frame, self.current_frame)
 
         # Draw warped corners
-        if self.H is not None and len(self.corners) > 1:
-            self.draw_quad(top_frame_canvas, self.warp_points(self.corners, self.H, self.width))
+        # if self.H is not None and len(self.corners) > 1:
+        #     self.draw_quad(top_frame_canvas, self.warp_points(self.corners, self.H, self.width))
 
         # Stack top and bottom frames vertically on the final canvas
-        canvas = np.vstack((top_frame_canvas, bottom_frame))
+        # canvas = np.vstack((top_frame_canvas, bottom_frame))
 
-        cv2.imshow(self.window_name, canvas)
+        # cv2.imshow(self.window_name, canvas)
 
     def match_and_draw(self, ref_frame, current_frame):
 
@@ -230,7 +230,10 @@ class MatchingDemo:
 
         if len(points1) > 10 and len(points2) > 10:
             # Find homography
+            # start = time()
             self.H, inliers = cv2.findHomography(points1, points2, cv2.USAC_MAGSAC, self.ransac_thr, maxIters=700, confidence=0.995)
+            # end = time()
+            # print("homography time ", end-start)
             inliers = inliers.flatten() > 0
 
             if inliers.sum() < self.min_inliers:
@@ -243,26 +246,29 @@ class MatchingDemo:
                 kp2 = [cv2.KeyPoint(p[0],p[1], 5) for p in points2[inliers]]
                 good_matches = [cv2.DMatch(i,i,0) for i in range(len(kp1))]
 
+            # start = time()
             # Draw matches
-            matched_frame = cv2.drawMatches(ref_frame, kp1, current_frame, kp2, good_matches, None, matchColor=(0, 200, 0), flags=2)
-            
+            # matched_frame = cv2.drawMatches(ref_frame, kp1, current_frame, kp2, good_matches, None, matchColor=(0, 200, 0), flags=2)
+            # end = time()
+            # print("drawMatches time ", end-start)
         else:
             matched_frame = np.hstack([ref_frame, current_frame])
 
-        color = (240, 89, 169)
+        # color = (240, 89, 169)
 
         # Add a colored rectangle to separate from the top frame
-        cv2.rectangle(matched_frame, (2, 2), (self.width*2-2, self.height-2), color, 5)
+        # cv2.rectangle(matched_frame, (2, 2), (self.width*2-2, self.height-2), color, 5)
 
         # Adding captions on the top frame canvas
-        self.putText(canvas=matched_frame, text="%s Matches: %d"%(self.args.method, len(good_matches)), org=(10, 30), fontFace=self.font, 
-            fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
+        # self.putText(canvas=matched_frame, text="%s Matches: %d"%(self.args.method, len(good_matches)), org=(10, 30), fontFace=self.font, 
+        #     fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
         
                 # Adding captions on the top frame canvas
-        self.putText(canvas=matched_frame, text="FPS (registration): {:.1f}".format(self.FPS), org=(self.width+10, 30), fontFace=self.font, 
-            fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
+        # self.putText(canvas=matched_frame, text="FPS (registration): {:.1f}".format(self.FPS), org=(self.width+10, 30), fontFace=self.font, 
+        #     fontScale=self.font_scale, textColor=(0,0,0), borderColor=color, thickness=1, lineType=self.line_type)
+        print("global fps ", self.FPS)
 
-        return matched_frame
+        return current_frame
 
     def main_loop(self):
         self.current_frame = self.frame_grabber.get_last_frame()

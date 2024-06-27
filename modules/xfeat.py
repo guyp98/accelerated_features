@@ -136,7 +136,7 @@ class XFeat(nn.Module):
 			M1, K1, H1 = self.infer_onnx(x)
 
 
-		start = time.time()
+		# start = time.time()
 		if self.device == 'hailo':
 			B, H, W, _= K1.shape
 			K1h = K1.reshape(B, H, W, 8, 8).transpose(0, 3, 1, 4, 2).reshape(B, 1, H * 8, W * 8)
@@ -168,12 +168,12 @@ class XFeat(nn.Module):
 
 		valid = scores > 0
 
-		end = time.time()
-		self.frames_num = self.frames_num + 1
-		self.sum = self.sum + end-start
+		# end = time.time()
+		# self.frames_num = self.frames_num + 1
+		# self.sum = self.sum + end-start
 		# print(self.sum)
 		# print(self.frames_num)
-		print("post process ",self.sum/self.frames_num)
+		# print("post process ",self.sum/self.frames_num)
 		return [  
 				   {'keypoints': mkpts[b][valid[b]],
 					'scores': scores[b][valid[b]],
@@ -361,9 +361,10 @@ class XFeat(nn.Module):
 
 	@torch.inference_mode()
 	def match(self, feats1, feats2, min_cossim = 0.82):
-
 		cossim = feats1 @ feats2.t()
 		cossim_t = feats2 @ feats1.t()
+		
+		
 		
 		_, match12 = cossim.max(dim=1)
 		_, match21 = cossim_t.max(dim=1)
@@ -379,7 +380,6 @@ class XFeat(nn.Module):
 		else:
 			idx0 = idx0[mutual]
 			idx1 = match12[mutual]
-
 		return idx0, idx1
 
 	def create_xy(self, h, w, dev):

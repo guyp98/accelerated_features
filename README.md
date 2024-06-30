@@ -67,10 +67,7 @@ cd accelerated_features
 #create hailo env
 python3 -m venv xfeat_hailo
 . ./xfeat_hailo/bin/activate
-pip install torch
-pip install opencv-python
-pip install onnxruntime
-pip install tdqm
+pip install torch opencv-python onnxruntime tdqm
 pip install hailort-4.17.0-cp310-cp310-linux_x86_64.whl  #can be found in hailo developer zone
 
 #Run Demo

@@ -38,11 +38,13 @@ class XFeat(nn.Module):
 				hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
 				self.model_name = hailo_model_name_480_640
 				self.hef_path = hailo_model_name_480_640_path
-			if width == 320 and height == 224:
+			if width == 320 and height == 240:
 				hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
 				hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
 				self.model_name = hailo_model_name_224_320
 				self.hef_path = hailo_model_name_224_320_path
+			else:
+				raise Exception("Sorry, wrong dimentions")
 			self.hailo_model = Hailo(hef_path = f'{self.hef_path}{self.model_name}sim.hef',input_dtype=FormatType.FLOAT32, output_dtype=FormatType.FLOAT32)
 			
 			self.preprocess_onnx = False

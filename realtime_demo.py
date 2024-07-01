@@ -22,6 +22,7 @@ def argparser():
     parser.add_argument('--max_kpts', type=int, default=3_000, help='Maximum number of keypoints.')
     parser.add_argument('--method', type=str, choices=['ORB', 'SIFT', 'XFeat'], default='XFeat', help='Local feature detection method to use.')
     parser.add_argument('--cam', type=int, default=0, help='Webcam device number.')
+    parser.add_argument('--video', type=str, default="", help='video path.')
     parser.add_argument('--inference_type', type=str, default='hailo', help='"hailo" or torch or onnx')
     return parser.parse_args()
 
@@ -77,7 +78,10 @@ def init_method(method, max_kpts, width, height, device):
 class MatchingDemo:
     def __init__(self, args):
         self.args = args
-        self.cap = cv2.VideoCapture(args.cam)
+        if args.video != "":
+            self.cap = cv2.VideoCapture(args.video)
+        else:
+            self.cap = cv2.VideoCapture(args.cam)
         self.width = args.width
         self.height = args.height
         self.device = args.inference_type

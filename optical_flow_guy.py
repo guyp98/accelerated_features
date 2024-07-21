@@ -43,6 +43,7 @@ class FrameGrabber(threading.Thread):
             ret, frame = self.cap.read()
             if not ret:
                 print("Can't receive frame (stream ended?).")
+                self.stop()
             self.second_last_frame = self.frame
             self.frame = frame
             sleep(0.01)
@@ -125,7 +126,7 @@ class MatchingDemo:
         self.height = args.height
         self.device = args.inference_type
         self.rect_cash = Cash(5)
-        self.matchs_cash = Cash(1)
+        self.matchs_cash = Cash(3)
         self.ref_frame = None
         self.ref_precomp = [[],[]]
         self.margin = 100

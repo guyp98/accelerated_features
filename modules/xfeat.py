@@ -33,19 +33,6 @@ class 		XFeat(nn.Module):
 		if self.device == 'hailo':
 			self.model_name = ''
 			self.hef_path = ''
-			# if width == 640 and height == 480:
-			# 	hailo_model_name_480_640 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_'
-			# 	hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
-			# 	self.model_name = hailo_model_name_480_640
-			# 	self.hef_path = hailo_model_name_480_640_path
-			# 	self.sim = 'sim'
-			# if width == 320 and height == 224:
-			# 	hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
-			# 	hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
-			# 	self.model_name = hailo_model_name_224_320
-			# 	self.hef_path = hailo_model_name_224_320_path
-			# 	self.sim = 'sim'
-			# elif width == 640 and height == 480:
 			hailo_model_name_288_384 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_288_384'
 			hailo_model_name_288_384_path = 'hailo_files/model_288_384/'
 			self.model_name = hailo_model_name_288_384

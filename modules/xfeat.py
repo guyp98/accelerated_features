@@ -68,7 +68,7 @@ class XFeat(nn.Module):
 			else:
 				self.net.load_state_dict(weights)
 
-		self.interpolator = InterpolateSparse2d('bicubic')
+		self.interpolator = InterpolateSparse2d('bilinear')
 	
 	def convert_to_onnx(self, x):
 		name = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_test_model.onnx'

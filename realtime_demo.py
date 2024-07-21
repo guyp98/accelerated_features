@@ -216,6 +216,8 @@ class MatchingDemo:
             # print(end-start)
             kpts1, descs1 = self.ref_precomp['keypoints'], self.ref_precomp['descriptors']
             kpts2, descs2 = current['keypoints'], current['descriptors']
+            if len(kpts1) == 0 or len(kpts2) == 0:
+                return np.hstack([ref_frame, current_frame])
             idx0, idx1 = self.method.matcher.match(descs1, descs2, 0.82)
             points1 = kpts1[idx0].cpu().numpy()
             points2 = kpts2[idx1].cpu().numpy()

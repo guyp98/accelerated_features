@@ -38,7 +38,7 @@ class XFeat(nn.Module):
 				hailo_model_name_480_640_path = 'hailo_files/model_480_640/'
 				self.model_name = hailo_model_name_480_640
 				self.hef_path = hailo_model_name_480_640_path
-			if width == 320 and height == 240:
+			elif width == 320 and height == 240:
 				hailo_model_name_224_320 = 'x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_224_320_'
 				hailo_model_name_224_320_path = 'hailo_files/model_224_320/'
 				self.model_name = hailo_model_name_224_320

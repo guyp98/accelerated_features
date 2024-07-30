@@ -12,13 +12,15 @@ import torch
 from time import time, sleep
 import argparse, sys
 import threading
+import asyncio
+from asyncio import Queue
 
 from modules.xfeat import XFeat
 
 def argparser():
     parser = argparse.ArgumentParser(description="Configurations for the real-time matching demo.")
-    parser.add_argument('--width', type=int, default=640, help='Width of the video capture stream. only 640x480 or 320x224 resolution')
-    parser.add_argument('--height', type=int, default=480, help='Height of the video capture stream. only 640x480 or 320x224 resolution')
+    parser.add_argument('--width', type=int, default=640, help='Width of the video capture stream. only 640x480 or 320x240 resolution')
+    parser.add_argument('--height', type=int, default=480, help='Height of the video capture stream. only 640x480 or 320x240 resolution')
     parser.add_argument('--max_kpts', type=int, default=3_000, help='Maximum number of keypoints.')
     parser.add_argument('--method', type=str, choices=['ORB', 'SIFT', 'XFeat'], default='XFeat', help='Local feature detection method to use.')
     parser.add_argument('--cam', type=int, default=0, help='Webcam device number.')
@@ -124,6 +126,8 @@ class MatchingDemo:
         #Set Mouse Callback
         cv2.setMouseCallback(self.window_name, self.mouse_callback)
 
+
+
     def setup_camera(self):
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
@@ -182,25 +186,34 @@ class MatchingDemo:
         self.draw_quad(top_frame_canvas, self.corners)
         
         return top_frame_canvas
+    
+    async def async_fun(self, func, queue1: Queue, queue2: Queue):
+        while True:
+            items: tuple = await queue1.get()
+            result = func(*items)
+            await queue2.put(result)
+    
 
-    def process(self):
+    async def process(self):
+        # Match features and draw matches on the bottom frame
+        # bottom_frame = self.match_and_draw(self.ref_frame, self.current_frame)
+        await self.match_and_draw_input_queue.put((self.ref_frame, self.current_frame))
+
         # Create a blank canvas for the top frame
         top_frame_canvas = self.create_top_frame()
-
-        # Match features and draw matches on the bottom frame
-        bottom_frame = self.match_and_draw(self.ref_frame, self.current_frame)
-
+        
         # Draw warped corners
         if self.H is not None and len(self.corners) > 1:
             self.draw_quad(top_frame_canvas, self.warp_points(self.corners, self.H, self.width))
 
+        bottom_frame = await self.match_and_draw_output_queue.get()
+        
         # Stack top and bottom frames vertically on the final canvas
         canvas = np.vstack((top_frame_canvas, bottom_frame))
 
         cv2.imshow(self.window_name, canvas)
 
     def match_and_draw(self, ref_frame, current_frame):
-
         matches, good_matches = [], []
         kp1, kp2 = [], []
         points1, points2 = [], []
@@ -270,7 +283,13 @@ class MatchingDemo:
 
         return matched_frame
 
-    def main_loop(self):
+    
+
+    async def main_loop(self):
+        self.match_and_draw_input_queue = Queue()
+        self.match_and_draw_output_queue = Queue()
+        asyncio.create_task(self.async_fun(self.match_and_draw, self.match_and_draw_input_queue, self.match_and_draw_output_queue))
+        
         self.current_frame = self.frame_grabber.get_last_frame()
         self.ref_frame = self.current_frame.copy()
         self.ref_precomp = self.method.descriptor.detectAndCompute(self.ref_frame, None) #Cache ref features
@@ -280,7 +299,7 @@ class MatchingDemo:
                 break
 
             t0 = time()
-            self.process()
+            await self.process()
 
             key = cv2.waitKey(1)
             if key == ord('q'):
@@ -306,4 +325,4 @@ class MatchingDemo:
 
 if __name__ == "__main__":
     demo = MatchingDemo(args = argparser())
-    demo.main_loop()
+    asyncio.run(demo.main_loop())

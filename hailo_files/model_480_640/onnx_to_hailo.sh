@@ -3,4 +3,4 @@ hailo parser onnx x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_s
 hailo optimize x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.har --calib-set-path ../calibsets/combined_array_transposed_with_onnx_head.npy 
 hailo compiler x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim_optimized.har 
 
-python3 split_onnx.py --onnx-path x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx --onnx-output x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim_only_head.onnx --subgraph-output /norm/InstanceNormalization_output_0  --subgraph-input INPUT_1
+python3 ../split_onnx.py --onnx-path x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim.onnx --onnx-output x_feature_13_without_pixel_unshuffle_normilize_softmax_slice_sim_only_head.onnx --subgraph-output /norm/InstanceNormalization_output_0  --subgraph-input INPUT_1
